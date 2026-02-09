@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sensor Integration System</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+
+    .app-container {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .auth-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .auth-box {
+      background: white;
+      padding: 40px;
+      border-radius: 10px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .auth-box h2 {
+      margin-bottom: 30px;
+      color: #333;
+      text-align: center;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      color: #555;
+      font-weight: 500;
+    }
+
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      background: #5568d3;
+    }
+
+    .btn-success {
+      background: #28a745;
+    }
+
+    .btn-danger {
+      background: #dc3545;
+    }
+
+    .error-message {
+      background: #f8d7da;
+      color: #721c24;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .success-message {
+      background: #d4edda;
+      color: #155724;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .auth-switch {
+      text-align: center;
+      margin-top: 20px;
+      color: #666;
+    }
+
+    .auth-switch a {
+      color: #667eea;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .navbar {
+      background: white;
+      padding: 15px 30px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .navbar h1 {
+      color: #667eea;
+      font-size: 24px;
+    }
+
+    .navbar-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .logout-btn {
+      padding: 8px 20px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .dashboard {
+      flex: 1;
+      padding: 30px;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .dashboard-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+
+    .dashboard-header h2 {
+      color: white;
+      font-size: 28px;
+    }
+
+    .add-device-btn {
+      padding: 12px 24px;
+      background: white;
+      color: #667eea;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .devices-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+    }
+
+    .device-card {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+
+    .device-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 15px;
+    }
+
+    .device-info h3 {
+      color: #333;
+      margin-bottom: 5px;
+    }
+
+    .device-type {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .device-status {
+      padding: 5px 10px;
+      border-radius: 15px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .sensor-readings {
+      margin: 15px 0;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+
+    .reading {
+      display: flex;
+      justify-content: space-between;
+      margin: 8px 0;
+      font-size: 14px;
+    }
+
+    .reading-label {
+      color: #666;
+      font-weight: 500;
+    }
+
+    .reading-value {
+      color: #333;
+      font-weight: 600;
+    }
+
+    .device-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .device-actions button {
+      flex: 1;
+      padding: 8px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: white;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .modal {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 500px;
+    }
+
+    .modal h3 {
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .modal-actions button {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const API_URL = 'http://localhost:3001/api';
+
+    // Auth Component
+    function Auth({ onLogin }) {
+      const [isLogin, setIsLogin] = useState(true);
+      const [formData, setFormData] = useState({ username: '', email: '', password: '' });
+      const [error, setError] = useState('');
+      const [success, setSuccess] = useState('');
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        setSuccess('');
+
+        const endpoint = isLogin ? '/auth/login' : '/auth/register';
+        const body = isLogin ? { email: formData.email, password: formData.password } : formData;
+
+        try {
+          const response = await fetch(`${API_URL}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            setSuccess(isLogin ? 'Login successful!' : 'Account created!');
+            setTimeout(() => onLogin(data.user), 500);
+          } else {
+            setError(data.error || 'An error occurred');
+          }
+        } catch (err) {
+          setError('Server connection error. Make sure the backend is running.');
+        }
+      };
+
+      return (
+        <div className="auth-container">
+          <div className="auth-box">
+            <h2>{isLogin ? 'Login' : 'Create Account'}</h2>
+            {error && <div className="error-message">{error}</div>}
+            {success && <div className="success-message">{success}</div>}
+            <form onSubmit={handleSubmit}>
+              {!isLogin && (
+                <div className="form-group">
+                  <label>Username</label>
+                  <input type="text" value={formData.username} onChange={(e) => setFormData({...formData, username: e.target.value})} required />
+                </div>
+              )}
+              <div className="form-group">
+                <label>Email</label>
+                <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+              </div>
+              <div className="form-group">
+                <label>Password</label>
+                <input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} required />
+              </div>
+              <button type="submit" className="btn">{isLogin ? 'Login' : 'Sign Up'}</button>
+            </form>
+            <div className="auth-switch">
+              {isLogin ? "Don't have an account? " : "Already have an account? "}
+              <a onClick={() => setIsLogin(!isLogin)}>{isLogin ? 'Sign Up' : 'Login'}</a>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Add Device Modal
+    function AddDeviceModal({ onClose, onAdd }) {
+      const [formData, setFormData] = useState({ device_name: '', device_type: 'Temperature', device_id: '' });
+      const [error, setError] = useState('');
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+          const token = localStorage.getItem('token');
+          const response = await fetch(`${API_URL}/devices`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(formData)
+          });
+          const data = await response.json();
+          if (response.ok) {
+            onAdd(data.device);
+            onClose();
+          } else {
+            setError(data.error);
+          }
+        } catch (err) {
+          setError('Failed to add device');
+        }
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Add New Device</h3>
+            {error && <div className="error-message">{error}</div>}
+            <form onSubmit={handleSubmit}>
+              <div className="form-group">
+                <label>Device Name</label>
+                <input type="text" value={formData.device_name} onChange={(e) => setFormData({...formData, device_name: e.target.value})} placeholder="Living Room Sensor" required />
+              </div>
+              <div className="form-group">
+                <label>Device Type</label>
+                <select value={formData.device_type} onChange={(e) => setFormData({...formData, device_type: e.target.value})}>
+                  <option>Temperature</option>
+                  <option>Humidity</option>
+                  <option>Environmental</option>
+                  <option>Motion</option>
+                  <option>Light</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Device ID</label>
+                <input type="text" value={formData.device_id} onChange={(e) => setFormData({...formData, device_id: e.target.value})} placeholder="SENSOR001" required />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn" onClick={onClose}>Cancel</button>
+                <button type="submit" className="btn">Add Device</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // Device Card
+    function DeviceCard({ device, onDelete, onGenerateData }) {
+      const [sensorData, setSensorData] = useState(null);
+      const [loading, setLoading] = useState(false);
+
+      useEffect(() => {
+        fetchSensorData();
+        const interval = setInterval(fetchSensorData, 10000);
+        return () => clearInterval(interval);
+      }, [device.device_id]);
+
+      const fetchSensorData = async () => {
+        try {
+          const token = localStorage.getItem('token');
+          const response = await fetch(`${API_URL}/sensor-data/${device.device_id}?limit=1`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.length > 0) setSensorData(data[0]);
+          }
+        } catch (err) {
+          console.error('Error fetching sensor data:', err);
+        }
+      };
+
+      const handleGenerateData = async () => {
+        setLoading(true);
+        try {
+          const token = localStorage.getItem('token');
+          await fetch(`${API_URL}/demo/generate-data/${device.device_id}`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          setTimeout(fetchSensorData, 500);
+          onGenerateData();
+        } catch (err) {
+          console.error('Error:', err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="device-card">
+          <div className="device-header">
+            <div className="device-info">
+              <h3>{device.device_name}</h3>
+              <div className="device-type">{device.device_type} • {device.device_id}</div>
+            </div>
+            <span className="device-status">{device.status}</span>
+          </div>
+          {sensorData && (
+            <div className="sensor-readings">
+              <div className="reading">
+                <span className="reading-label">🌡️ Temperature</span>
+                <span className="reading-value">{sensorData.temperature}°C</span>
+              </div>
+              <div className="reading">
+                <span className="reading-label">💧 Humidity</span>
+                <span className="reading-value">{sensorData.humidity}%</span>
+              </div>
+              <div className="reading">
+                <span className="reading-label">📊 Pressure</span>
+                <span className="reading-value">{sensorData.pressure} hPa</span>
+              </div>
+              <div className="reading">
+                <span className="reading-label">⏰ Last Update</span>
+                <span className="reading-value">{new Date(sensorData.timestamp).toLocaleTimeString()}</span>
+              </div>
+            </div>
+          )}
+          <div className="device-actions">
+            <button className="btn btn-success" onClick={handleGenerateData} disabled={loading}>
+              {loading ? 'Generating...' : 'Generate Data'}
+            </button>
+            <button className="btn btn-danger" onClick={() => onDelete(device.id)}>Delete</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Dashboard
+    function Dashboard({ user, onLogout }) {
+      const [devices, setDevices] = useState([]);
+      const [showAddModal, setShowAddModal] = useState(false);
+
+      useEffect(() => {
+        fetchDevices();
+      }, []);
+
+      const fetchDevices = async () => {
+        try {
+          const token = localStorage.getItem('token');
+          const response = await fetch(`${API_URL}/devices`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setDevices(data);
+          }
+        } catch (err) {
+          console.error('Error fetching devices:', err);
+        }
+      };
+
+      const handleAddDevice = (newDevice) => {
+        setDevices([...devices, newDevice]);
+      };
+
+      const handleDeleteDevice = async (deviceId) => {
+        if (!confirm('Are you sure you want to delete this device?')) return;
+        try {
+          const token = localStorage.getItem('token');
+          const response = await fetch(`${API_URL}/devices/${deviceId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (response.ok) {
+            setDevices(devices.filter(d => d.id !== deviceId));
+          }
+        } catch (err) {
+          console.error('Error deleting device:', err);
+        }
+      };
+
+      return (
+        <>
+          <nav className="navbar">
+            <h1>🔌 Sensor Integration System</h1>
+            <div className="navbar-right">
+              <span>Welcome, {user.username}!</span>
+              <button className="logout-btn" onClick={onLogout}>Logout</button>
+            </div>
+          </nav>
+          <div className="dashboard">
+            <div className="dashboard-header">
+              <h2>My Devices</h2>
+              <button className="add-device-btn" onClick={() => setShowAddModal(true)}>➕ Add Device</button>
+            </div>
+            {devices.length === 0 ? (
+              <div className="empty-state">
+                <h3>No devices yet</h3>
+                <p>Click "Add Device" to start tracking sensor data</p>
+              </div>
+            ) : (
+              <div className="devices-grid">
+                {devices.map(device => (
+                  <DeviceCard key={device.id} device={device} onDelete={handleDeleteDevice} onGenerateData={fetchDevices} />
+                ))}
+              </div>
+            )}
+          </div>
+          {showAddModal && <AddDeviceModal onClose={() => setShowAddModal(false)} onAdd={handleAddDevice} />}
+        </>
+      );
+    }
+
+    // Main App
+    function App() {
+      const [user, setUser] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        const token = localStorage.getItem('token');
+        const savedUser = localStorage.getItem('user');
+        if (token && savedUser) {
+          setUser(JSON.parse(savedUser));
+        }
+        setLoading(false);
+      }, []);
+
+      const handleLogin = (userData) => {
+        setUser(userData);
+      };
+
+      const handleLogout = () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setUser(null);
+      };
+
+      if (loading) return <div style={{color: 'white', textAlign: 'center', padding: '50px'}}>Loading...</div>;
+
+      return (
+        <div className="app-container">
+          {user ? <Dashboard user={user} onLogout={handleLogout} /> : <Auth onLogin={handleLogin} />}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
