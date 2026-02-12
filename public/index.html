@@ -7,6 +7,7 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
   <style>
     * {
       margin: 0;
@@ -308,15 +309,300 @@
     .modal-actions button {
       flex: 1;
     }
+    /* User Profile Styles */
+    .profile-btn {
+      padding: 8px 20px;
+      background: #f8f9fa;
+      color: #667eea;
+      border: 2px solid #667eea;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: 600;
+      margin-right: 10px;
+    }
+
+    .profile-btn:hover {
+      background: #667eea;
+      color: white;
+    }
+
+    .profile-modal {
+      background: white;
+      padding: 40px;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 600px;
+    }
+
+    .profile-section {
+      margin-bottom: 25px;
+    }
+
+    .profile-section h4 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+
+    .profile-info {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .profile-info p {
+      margin: 8px 0;
+      color: #555;
+    }
+
+    .profile-info strong {
+      color: #333;
+    }
+
+    .timeout-setting {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .timeout-setting input {
+      width: 80px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+
+    .timeout-setting select {
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+
+    .inactivity-warning {
+      background: #fff3cd;
+      color: #856404;
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      margin-top: 15px;
+      font-weight: 600;
+    }
+      /* Countdown Timer Styles */
+    .countdown-timer {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: white;
+      padding: 15px 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 999;
+      min-width: 200px;
+    }
+
+    .countdown-timer.warning {
+      background: #fff3cd;
+      border: 2px solid #ffc107;
+    }
+
+    .countdown-timer.critical {
+      background: #f8d7da;
+      border: 2px solid #dc3545;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(1.05);
+      }
+    }
+
+    .timer-icon {
+      font-size: 24px;
+    }
+
+    .timer-content {
+      flex: 1;
+    }
+
+    .timer-label {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 3px;
+    }
+
+    .timer-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #333;
+    }
+
+    .timer-value.warning {
+      color: #856404;
+    }
+
+    .timer-value.critical {
+      color: #721c24;
+    }
+
+    .timer-close {
+      background: transparent;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #999;
+      padding: 0;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .timer-close:hover {
+      color: #333;
+    }
+
+    .show-timer-btn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      font-size: 24px;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .show-timer-btn:hover {
+      background: #5568d3;
+    }
   </style>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
-    //const API_URL = 'http://localhost:3001/api'; //Local testing truquy
+    const { useState, useEffect, useRef } = React;
     const API_URL = 'https://sensor-integration-system-production.up.railway.app/api';
+
+    // Inactivity Timer Hook with Countdown
+    function useInactivityTimer(timeoutMinutes, onTimeout, onTick) {
+      const timerRef = useRef(null);
+      const intervalRef = useRef(null);
+      const [secondsLeft, setSecondsLeft] = useState(timeoutMinutes * 60);
+
+      const resetTimer = () => {
+        // Clear existing timers
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+        }
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+        }
+
+        // Reset seconds
+        setSecondsLeft(timeoutMinutes * 60);
+
+        // Start countdown interval (updates every second)
+        intervalRef.current = setInterval(() => {
+          setSecondsLeft(prev => {
+            const newValue = prev - 1;
+            if (onTick) onTick(newValue);
+            return newValue;
+          });
+        }, 1000);
+
+        // Set timeout for logout
+        timerRef.current = setTimeout(() => {
+          onTimeout();
+        }, timeoutMinutes * 60 * 1000);
+      };
+
+      useEffect(() => {
+        // Events that reset the timer
+        const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+        
+        events.forEach(event => {
+          window.addEventListener(event, resetTimer);
+        });
+
+        resetTimer(); // Start timer
+
+        return () => {
+          if (timerRef.current) {
+            clearTimeout(timerRef.current);
+          }
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+          }
+          events.forEach(event => {
+            window.removeEventListener(event, resetTimer);
+          });
+        };
+      }, [timeoutMinutes]);
+
+      return secondsLeft;
+    }
+
+    // Countdown Timer Display Component
+    function CountdownTimer({ secondsLeft, totalMinutes, onClose }) {
+      const [isVisible, setIsVisible] = useState(true);
+
+      const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+      };
+
+      const getTimerState = () => {
+        const percentage = (secondsLeft / (totalMinutes * 60)) * 100;
+        if (percentage <= 10) return 'critical';
+        if (percentage <= 30) return 'warning';
+        return 'normal';
+      };
+
+      const timerState = getTimerState();
+
+      if (!isVisible) {
+        return (
+          <button className="show-timer-btn" onClick={() => setIsVisible(true)} title="Show timer">
+            ⏱️
+          </button>
+        );
+      }
+
+      return (
+        <div className={`countdown-timer ${timerState}`}>
+          <div className="timer-icon">
+            {timerState === 'critical' ? '⚠️' : timerState === 'warning' ? '⏰' : '⏱️'}
+          </div>
+          <div className="timer-content">
+            <div className="timer-label">Auto-logout in</div>
+            <div className={`timer-value ${timerState}`}>{formatTime(secondsLeft)}</div>
+          </div>
+          <button className="timer-close" onClick={() => setIsVisible(false)} title="Hide timer">
+            ×
+          </button>
+        </div>
+      );
+    }
 
     // Auth Component
     function Auth({ onLogin }) {
@@ -387,6 +673,66 @@
       );
     }
 
+    // User Profile Modal
+    function UserProfileModal({ user, onClose, inactivityTimeout, setInactivityTimeout }) {
+      const [localTimeout, setLocalTimeout] = useState(inactivityTimeout);
+
+      const handleSave = () => {
+        setInactivityTimeout(localTimeout);
+        localStorage.setItem('inactivityTimeout', localTimeout);
+        alert('Settings saved! Timer has been reset.');
+        onClose();
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="profile-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>👤 User Profile</h3>
+            
+            <div className="profile-section">
+              <h4>Account Information</h4>
+              <div className="profile-info">
+                <p><strong>Username:</strong> {user.username}</p>
+                <p><strong>Email:</strong> {user.email}</p>
+                <p><strong>User ID:</strong> {user.id}</p>
+              </div>
+            </div>
+
+            <div className="profile-section">
+              <h4>Security Settings</h4>
+              <div className="profile-info">
+                <p><strong>Auto-logout Settings</strong></p>
+                <p style={{fontSize: '14px', color: '#666', marginTop: '5px'}}>
+                  Automatically log out after period of inactivity
+                </p>
+                <div className="timeout-setting">
+                  <input 
+                    type="number" 
+                    min="1" 
+                    max="120"
+                    value={localTimeout}
+                    onChange={(e) => setLocalTimeout(parseInt(e.target.value) || 1)}
+                  />
+                  <span>minute(s)</span>
+                </div>
+                <div className="inactivity-warning">
+                  ⚠️ You will be logged out after {localTimeout} minute(s) of inactivity
+                </div>
+                <p style={{fontSize: '13px', color: '#666', marginTop: '10px'}}>
+                  💡 Tip: Any mouse movement, click, or keyboard action will reset the timer
+                </p>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+              <button className="btn" onClick={handleSave}>Save Settings</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // Add Device Modal
     function AddDeviceModal({ onClose, onAdd }) {
       const [formData, setFormData] = useState({ device_name: '', device_type: 'Temperature', device_id: '' });
@@ -438,7 +784,7 @@
                 <input type="text" value={formData.device_id} onChange={(e) => setFormData({...formData, device_id: e.target.value})} placeholder="SENSOR001" required />
               </div>
               <div className="modal-actions">
-                <button type="button" className="btn" onClick={onClose}>Cancel</button>
+                <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
                 <button type="submit" className="btn">Add Device</button>
               </div>
             </form>
@@ -533,6 +879,17 @@
     function Dashboard({ user, onLogout }) {
       const [devices, setDevices] = useState([]);
       const [showAddModal, setShowAddModal] = useState(false);
+      const [showProfileModal, setShowProfileModal] = useState(false);
+      const [inactivityTimeout, setInactivityTimeout] = useState(() => {
+        const saved = localStorage.getItem('inactivityTimeout');
+        return saved ? parseInt(saved) : 1; // Default 1 minute for testing
+      });
+
+      // Auto-logout with countdown
+      const secondsLeft = useInactivityTimer(inactivityTimeout, () => {
+        alert(`You have been logged out due to ${inactivityTimeout} minute(s) of inactivity.`);
+        onLogout();
+      });
 
       useEffect(() => {
         fetchDevices();
@@ -578,7 +935,8 @@
           <nav className="navbar">
             <h1>🔌 Sensor Integration System</h1>
             <div className="navbar-right">
-              <span>Welcome, {user.username}!</span>
+              <span className="user-info">Welcome, {user.username}!</span>
+              <button className="profile-btn" onClick={() => setShowProfileModal(true)}>👤 Profile</button>
               <button className="logout-btn" onClick={onLogout}>Logout</button>
             </div>
           </nav>
@@ -600,7 +958,19 @@
               </div>
             )}
           </div>
+
+          {/* Countdown Timer Display */}
+          <CountdownTimer secondsLeft={secondsLeft} totalMinutes={inactivityTimeout} />
+
           {showAddModal && <AddDeviceModal onClose={() => setShowAddModal(false)} onAdd={handleAddDevice} />}
+          {showProfileModal && (
+            <UserProfileModal 
+              user={user} 
+              onClose={() => setShowProfileModal(false)}
+              inactivityTimeout={inactivityTimeout}
+              setInactivityTimeout={setInactivityTimeout}
+            />
+          )}
         </>
       );
     }
