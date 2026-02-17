@@ -81,37 +81,71 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(400).json({ error: 'Email and password required' });
   }
 
-  db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
-    if (err) {
-      return res.status(500).json({ error: 'Server error' });
-    }
-    
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
+db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
+  if (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
 
-    try {
-      const validPassword = await bcrypt.compare(password, user.password);
-      
-      if (!validPassword) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  // Check if account is locked
+  if (user.is_locked === 1) {
+    return res.status(403).json({ 
+      error: 'Account locked due to too many failed attempts.' 
+    });
+  }
+
+  try {
+    const validPassword = await bcrypt.compare(password, user.password);
+
+    //If password is wrong
+    if (!validPassword) {
+      const newAttempts = user.failed_attempts + 1;
+
+      if (newAttempts >= 3) {
+        db.run(
+          'UPDATE users SET failed_attempts = ?, is_locked = 1 WHERE id = ?',
+          [newAttempts, user.id]
+        );
+
+        return res.status(403).json({ 
+          error: 'Account locked after 3 failed attempts.' 
+        });
+      } else {
+        db.run(
+          'UPDATE users SET failed_attempts = ? WHERE id = ?',
+          [newAttempts, user.id]
+        );
+
+        return res.status(401).json({ 
+          error: `Invalid credentials. ${3 - newAttempts} attempts left.` 
+        });
       }
-
-      const token = jwt.sign(
-        { id: user.id, username: user.username },
-        process.env.JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-
-      res.json({
-        message: 'Login successful',
-        token,
-        user: { id: user.id, username: user.username, email: user.email }
-      });
-    } catch (error) {
-      res.status(500).json({ error: 'Server error' });
     }
-  });
+
+    //If password is correct
+    db.run(
+      'UPDATE users SET failed_attempts = 0 WHERE id = ?',
+      [user.id]
+    );
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      message: 'Login successful',
+      token,
+      user: { id: user.id, username: user.username, email: user.email }
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // Get current user
