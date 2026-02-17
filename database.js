@@ -21,7 +21,19 @@ db.serialize(() => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  
+db.run(`ALTER TABLE users ADD COLUMN failed_attempts INTEGER DEFAULT 0`, (err) => {
+    if (err && !err.message.includes("duplicate column")) {
+      console.error("Error adding failed_attempts column:", err.message);
+    }
+  });
 
+  db.run(`ALTER TABLE users ADD COLUMN is_locked INTEGER DEFAULT 0`, (err) => {
+    if (err && !err.message.includes("duplicate column")) {
+      console.error("Error adding is_locked column:", err.message);
+    }
+  });
+  
   // Devices table
   db.run(`
     CREATE TABLE IF NOT EXISTS devices (
