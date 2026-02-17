@@ -147,6 +147,7 @@ db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+});
 
 // Get current user
 app.get('/api/auth/me', authenticateToken, (req, res) => {
