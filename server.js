@@ -108,7 +108,7 @@ app.post('/api/auth/login', (req, res) => {
         if (newAttempts >= 3) {
           db.run(
             'UPDATE users SET failed_attempts = ?, is_locked = 1 WHERE id = ?',
-            [newAttempts, user.id]
+            [newAttempts, user.id],
             (updateErr) => {
               if (updateErr) {
                 console.error('Error locking account:', updateErr);
@@ -122,7 +122,7 @@ app.post('/api/auth/login', (req, res) => {
         } else {
           db.run(
             'UPDATE users SET failed_attempts = ? WHERE id = ?',
-            [newAttempts, user.id]
+            [newAttempts, user.id],
             (updateErr) => {
               if (updateErr) {
                 console.error('Error updating failed attempts:', updateErr);
@@ -139,7 +139,7 @@ app.post('/api/auth/login', (req, res) => {
       //If password is correct
       db.run(
         'UPDATE users SET failed_attempts = 0 WHERE id = ?',
-        [user.id]
+        [user.id],
         (updateErr) => {
           if (updateErr) {
             console.error('Error resetting failed attempts:', updateErr);
