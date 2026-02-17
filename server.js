@@ -146,7 +146,7 @@ db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
-});
+  });
 });
 
 // Get current user
@@ -279,3 +279,4 @@ app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log('Press Ctrl+C to stop');
 });
+}
