@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - PORT=3001
+      - JWT_SECRET=your-super-secret-jwt-key
+      - NODE_ENV=development
+    restart: unless-stopped
