@@ -85,17 +85,67 @@ app.post('/api/auth/login', (req, res) => {
     if (err) {
       return res.status(500).json({ error: 'Server error' });
     }
-    
+
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // Check if account is locked
+    if (user.is_locked === 1) {
+      return res.status(403).json({ 
+        error: 'Account locked due to too many failed attempts.' 
+      });
+    }
+
     try {
       const validPassword = await bcrypt.compare(password, user.password);
-      
+
+      //If password is wrong
       if (!validPassword) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+        const newAttempts = (user.failed_attempts || 0) + 1;
+      
+      //Lock account after 3 failed attempts
+        if (newAttempts >= 3) {
+          db.run(
+            'UPDATE users SET failed_attempts = ?, is_locked = 1 WHERE id = ?',
+            [newAttempts, user.id],
+            (updateErr) => {
+              if (updateErr) {
+                console.error('Error locking account:', updateErr);
+              }
+          }
+        );
+
+          return res.status(403).json({ 
+            error: 'Account locked after 3 failed attempts.' 
+          });
+        } else {
+          db.run(
+            'UPDATE users SET failed_attempts = ? WHERE id = ?',
+            [newAttempts, user.id],
+            (updateErr) => {
+              if (updateErr) {
+                console.error('Error updating failed attempts:', updateErr);
+              }
+            }
+          );
+
+          return res.status(401).json({ 
+            error: `Invalid credentials. ${3 - newAttempts} attempts left.` 
+          });
+        }
       }
+
+      //If password is correct
+      db.run(
+        'UPDATE users SET failed_attempts = 0 WHERE id = ?',
+        [user.id],
+        (updateErr) => {
+          if (updateErr) {
+            console.error('Error resetting failed attempts:', updateErr);
+          }
+        }
+      );
 
       const token = jwt.sign(
         { id: user.id, username: user.username },
@@ -108,7 +158,9 @@ app.post('/api/auth/login', (req, res) => {
         token,
         user: { id: user.id, username: user.username, email: user.email }
       });
+
     } catch (error) {
+      console.error('Login error:', error);
       res.status(500).json({ error: 'Server error' });
     }
   });
