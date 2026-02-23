@@ -28,6 +28,18 @@ db.run(`ALTER TABLE users ADD COLUMN failed_attempts INTEGER DEFAULT 0`, (err) =
     }
   });
 
+  db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, (err) => {
+    if (err && !err.message.includes("duplicate column")) {
+      console.error("Error adding phone column:", err.message);
+    }
+  });
+
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone)`, (err) => {
+    if (err) {
+      console.error("Error creating phone index:", err.message);
+    }
+  });
+
   db.run(`ALTER TABLE users ADD COLUMN is_locked INTEGER DEFAULT 0`, (err) => {
     if (err && !err.message.includes("duplicate column")) {
       console.error("Error adding is_locked column:", err.message);
