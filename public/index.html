@@ -500,7 +500,7 @@
 
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
-    const API_URL = 'https://sensor-integration-system-production.up.railway.app/api';
+    const API_URL = '/api';
 
     // Inactivity Timer Hook with Countdown
     function useInactivityTimer(timeoutMinutes, onTimeout, onTick) {
@@ -607,17 +607,120 @@
     // Auth Component
     function Auth({ onLogin }) {
       const [isLogin, setIsLogin] = useState(true);
-      const [formData, setFormData] = useState({ username: '', email: '', password: '' });
+      const [formData, setFormData] = useState({ username: '', identifier: '', password: '' });
       const [error, setError] = useState('');
       const [success, setSuccess] = useState('');
+      const [verificationCode, setVerificationCode] = useState('');
+      const [verificationInput, setVerificationInput] = useState('');
+      const [showVerification, setShowVerification] = useState(false);
+      const generateVerificationCode = () => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let raw = '';
+        for (let i = 0; i < 6; i++) {
+          raw += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return `${raw.slice(0, 3)}-${raw.slice(3)}`;
+      };
+      const resetVerificationCode = () => {
+        setVerificationCode(generateVerificationCode());
+        setVerificationInput('');
+      };
+
+      const handleIdentifierChange = (value) => {
+        setVerificationInput('');
+        setVerificationCode('');
+        setShowVerification(false);
+        setFormData({ ...formData, identifier: value });
+      };
+
+      const normalizePhoneIdentifier = (value = '') => {
+        const digits = String(value).replace(/\D/g, '');
+        if (digits.length === 11 && digits.startsWith('1')) {
+          return digits.slice(1);
+        }
+        return digits;
+      };
+
+      const detectIdentifierType = (value = '') => {
+        const trimmed = value.trim();
+        if (trimmed.includes('@')) {
+          return 'email';
+        }
+        const normalizedPhone = normalizePhoneIdentifier(trimmed);
+        if (/^\d{10}$/.test(normalizedPhone)) {
+          return 'phone';
+        }
+        return null;
+      };
+
+      const handleVerificationInputChange = (value) => {
+        const cleaned = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+        const formatted =
+          cleaned.length > 3 ? `${cleaned.slice(0, 3)}-${cleaned.slice(3)}` : cleaned;
+        setVerificationInput(formatted);
+      };
+
+      const buildLoginPayload = () => {
+        const identifierValue = formData.identifier.trim();
+        const identifierType = detectIdentifierType(identifierValue);
+        const normalizedIdentifier =
+          identifierType === 'phone'
+            ? normalizePhoneIdentifier(identifierValue)
+            : identifierValue;
+        return {
+          identifier: normalizedIdentifier,
+          identifierType,
+          password: formData.password
+        };
+      };
+
+      const buildRegisterPayload = () => {
+        const identifierValue = formData.identifier.trim();
+        const identifierType = detectIdentifierType(identifierValue);
+        const normalizedIdentifier =
+          identifierType === 'phone'
+            ? normalizePhoneIdentifier(identifierValue)
+            : identifierValue;
+        return {
+          username: formData.username,
+          identifier: normalizedIdentifier,
+          identifierType,
+          password: formData.password
+        };
+      };
 
       const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setSuccess('');
+        const identifierType = detectIdentifierType(formData.identifier);
+
+        if (!identifierType || !formData.password) {
+          setError('Use a 10-digit phone number or a valid email, plus password.');
+          setVerificationInput('');
+          setVerificationCode('');
+          setShowVerification(false);
+          return;
+        }
+
+        if (!showVerification) {
+          resetVerificationCode();
+          setShowVerification(true);
+          return;
+        }
+
+        if (verificationInput.trim().toUpperCase() !== verificationCode) {
+          setError('Request denied: verification code did not match.');
+          setVerificationInput('');
+          setVerificationCode('');
+          setShowVerification(false);
+          return;
+        }
 
         const endpoint = isLogin ? '/auth/login' : '/auth/register';
-        const body = isLogin ? { email: formData.email, password: formData.password } : formData;
+        const body = isLogin
+          ? buildLoginPayload()
+          : buildRegisterPayload();
 
         try {
           const response = await fetch(`${API_URL}${endpoint}`, {
@@ -655,18 +758,57 @@
                 </div>
               )}
               <div className="form-group">
-                <label>Email</label>
-                <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+                <label>Email or Phone</label>
+                <input
+                  type="text"
+                  placeholder="name@example.com or 1234567890"
+                  value={formData.identifier}
+                  onChange={(e) => handleIdentifierChange(e.target.value)}
+                  required
+                />
               </div>
               <div className="form-group">
                 <label>Password</label>
-                <input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} required />
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => {
+                    setVerificationInput('');
+                    setVerificationCode('');
+                    setShowVerification(false);
+                    setFormData({...formData, password: e.target.value});
+                  }}
+                  required
+                />
               </div>
+              {showVerification && (
+                <div className="form-group">
+                  <label>Verification Code</label>
+                  <div style={{ fontFamily: 'monospace', fontSize: '18px', letterSpacing: '2px', marginBottom: '8px' }}>
+                    {verificationCode}
+                  </div>
+                  <input
+                    type="text"
+                    maxLength="7"
+                    placeholder="Enter code above"
+                    value={verificationInput}
+                    onChange={(e) => handleVerificationInputChange(e.target.value)}
+                    style={{ textTransform: 'uppercase' }}
+                    required
+                  />
+                </div>
+              )}
               <button type="submit" className="btn">{isLogin ? 'Login' : 'Sign Up'}</button>
             </form>
             <div className="auth-switch">
               {isLogin ? "Don't have an account? " : "Already have an account? "}
-              <a onClick={() => setIsLogin(!isLogin)}>{isLogin ? 'Sign Up' : 'Login'}</a>
+              <a onClick={() => {
+                setIsLogin(!isLogin);
+                setFormData({ username: '', identifier: '', password: '' });
+                setVerificationInput('');
+                setVerificationCode('');
+                setShowVerification(false);
+              }}>{isLogin ? 'Sign Up' : 'Login'}</a>
             </div>
           </div>
         </div>
@@ -693,7 +835,7 @@
               <h4>Account Information</h4>
               <div className="profile-info">
                 <p><strong>Username:</strong> {user.username}</p>
-                <p><strong>Email:</strong> {user.email}</p>
+                <p><strong>Email/Phone Number:</strong> {user.email || user.phone || 'Not provided'}</p>
                 <p><strong>User ID:</strong> {user.id}</p>
               </div>
             </div>
