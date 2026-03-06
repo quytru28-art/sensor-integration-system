@@ -1,0 +1,10 @@
+node_modules/
+.env
+npm-debug.log
+.DS_Store
+
+# SQLite (local runtime data)
+*.db
+*.db-shm
+*.db-wal
+sensor_system.db*

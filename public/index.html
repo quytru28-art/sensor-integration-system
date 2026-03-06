@@ -155,6 +155,28 @@
     /* VERIFICATION CODE BOXES */
     .verify-boxes { display: flex; gap: 8px; margin-bottom: 10px; }
     .verify-box { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 46px; background: #f0f4ff; border: 2px solid #667eea; border-radius: 6px; font-family: monospace; font-size: 20px; font-weight: 700; color: #333; }
+
+    /* SCANNER */
+    .scanner-modal { background: white; padding: 18px; border-radius: 12px; width: 100%; max-width: 620px; max-height: 90vh; overflow: hidden; }
+    .scanner-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .scanner-header h3 { margin: 0; color: #333; font-size: 16px; }
+    .scanner-video-wrap { position: relative; background: #000; border-radius: 10px; overflow: hidden; }
+    .scanner-video { width: 100%; height: auto; display: block; }
+    .scanner-reticle {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: min(70%, 360px);
+      aspect-ratio: 1 / 1;
+      border: 3px solid rgba(102,126,234,0.9);
+      border-radius: 12px;
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.25);
+      pointer-events: none;
+    }
+    .scanner-help { font-size: 13px; color: #666; margin-top: 10px; line-height: 1.4; }
+    .inline-row { display: flex; gap: 10px; align-items: center; }
+    .inline-row .btn-inline { width: auto; padding: 10px 12px; font-size: 13px; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -540,15 +562,175 @@
     );
   }
 
+  // ===== CAMERA SCANNER MODAL (QR + BARCODE) =====
+  function CameraScannerModal({ onClose, onDetected }) {
+    const videoRef = useRef(null);
+    const streamRef = useRef(null);
+    const rafRef = useRef(null);
+    const detectorRef = useRef(null);
+    const [error, setError] = useState('');
+    const [status, setStatus] = useState('Starting camera...');
+    const [torchOn, setTorchOn] = useState(false);
+    const [torchAvailable, setTorchAvailable] = useState(false);
+
+    const stopAll = () => {
+      try {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      } catch {}
+      try {
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop());
+          streamRef.current = null;
+        }
+      } catch {}
+    };
+
+    const trySetTorch = async (on) => {
+      try {
+        const stream = streamRef.current;
+        if (!stream) return;
+        const track = stream.getVideoTracks()[0];
+        if (!track) return;
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        if (!caps.torch) return;
+        await track.applyConstraints({ advanced: [{ torch: !!on }] });
+        setTorchOn(!!on);
+      } catch {}
+    };
+
+    useEffect(() => {
+      let mounted = true;
+
+      async function start() {
+        setError('');
+        if (!('mediaDevices' in navigator) || !navigator.mediaDevices.getUserMedia) {
+          setError('Camera access is not available in this browser.');
+          setStatus('');
+          return;
+        }
+        if (!('BarcodeDetector' in window)) {
+          setError('Barcode scanning is not supported in this browser. Try Chrome/Edge on Android or desktop.');
+          setStatus('');
+          return;
+        }
+
+        try {
+          // Supported formats vary by browser; we request common ones.
+          const formats = ['qr_code', 'code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_39', 'code_93', 'itf', 'pdf417', 'data_matrix', 'aztec'];
+          detectorRef.current = new window.BarcodeDetector({ formats });
+        } catch {
+          setError('Barcode detector failed to initialize in this browser.');
+          setStatus('');
+          return;
+        }
+
+        try {
+          setStatus('Requesting camera permission...');
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false
+          });
+          if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
+          streamRef.current = stream;
+          const video = videoRef.current;
+          video.srcObject = stream;
+          await video.play();
+
+          // Torch support (optional).
+          try {
+            const track = stream.getVideoTracks()[0];
+            const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+            setTorchAvailable(!!caps.torch);
+          } catch { setTorchAvailable(false); }
+
+          setStatus('Point camera at a QR/barcode...');
+
+          const scanLoop = async () => {
+            if (!mounted) return;
+            const video = videoRef.current;
+            const detector = detectorRef.current;
+            if (video && detector && video.readyState >= 2) {
+              try {
+                const codes = await detector.detect(video);
+                if (codes && codes.length > 0) {
+                  const raw = (codes[0].rawValue || '').trim();
+                  if (raw) {
+                    stopAll();
+                    onDetected(raw);
+                    return;
+                  }
+                }
+              } catch {
+                // ignore transient detect errors
+              }
+            }
+            rafRef.current = requestAnimationFrame(scanLoop);
+          };
+          rafRef.current = requestAnimationFrame(scanLoop);
+        } catch (e) {
+          setError('Camera permission denied or unavailable. Please allow camera access and try again.');
+          setStatus('');
+        }
+      }
+
+      start();
+      return () => {
+        mounted = false;
+        stopAll();
+      };
+    }, []);
+
+    return (
+      <div className="modal-overlay" onClick={() => { stopAll(); onClose(); }}>
+        <div className="scanner-modal" onClick={e => e.stopPropagation()}>
+          <div className="scanner-header">
+            <h3>Scan QR / Barcode</h3>
+            <button className="btn btn-grey btn-inline" onClick={() => { stopAll(); onClose(); }}>Close</button>
+          </div>
+
+          {error ? (
+            <div className="error-message">{error}</div>
+          ) : (
+            <>
+              <div className="scanner-video-wrap">
+                <video ref={videoRef} className="scanner-video" playsInline muted />
+                <div className="scanner-reticle" />
+              </div>
+              <div className="scanner-help">
+                <div><strong>Status:</strong> {status || 'Ready'}</div>
+                <div style={{marginTop:'8px'}} className="inline-row">
+                  {torchAvailable && (
+                    <button className="btn btn-inline" type="button" onClick={() => trySetTorch(!torchOn)}>
+                      {torchOn ? 'Turn Torch Off' : 'Turn Torch On'}
+                    </button>
+                  )}
+                  <button className="btn btn-grey btn-inline" type="button" onClick={() => { stopAll(); onClose(); }}>
+                    Cancel
+                  </button>
+                </div>
+                <div style={{marginTop:'10px',fontSize:'12px',color:'#888'}}>
+                  Tip: Use good lighting and keep the code inside the square.
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ===== ADD DEVICE MODAL =====
   function AddDeviceModal({ onClose, onAdd }) {
     const [formData, setFormData] = useState({ device_name:'', device_type:'Temperature', device_id:'' });
     const [error, setError] = useState('');
+    const [showScanner, setShowScanner] = useState(false);
     const handleSubmit = async (e) => {
       e.preventDefault();
       try {
         const token = localStorage.getItem('token');
-        const res = await fetch(`${API_URL}/devices`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify(formData) });
+        const payload = { ...formData, device_id: String(formData.device_id || '').trim() };
+        const res = await fetch(`${API_URL}/devices`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify(payload) });
         const data = await res.json();
         if (res.ok) { onAdd(data.device); onClose(); } else setError(data.error);
       } catch { setError('Failed to add device'); }
@@ -561,13 +743,39 @@
           <form onSubmit={handleSubmit}>
             <div className="form-group"><label>Device Name</label><input type="text" value={formData.device_name} onChange={e=>setFormData({...formData,device_name:e.target.value})} placeholder="Living Room Sensor" required /></div>
             <div className="form-group"><label>Device Type</label><select value={formData.device_type} onChange={e=>setFormData({...formData,device_type:e.target.value})}><option>Temperature</option><option>Humidity</option><option>Environmental</option><option>Motion</option><option>Light</option></select></div>
-            <div className="form-group"><label>Device ID</label><input type="text" value={formData.device_id} onChange={e=>setFormData({...formData,device_id:e.target.value})} placeholder="SENSOR001" required /></div>
+            <div className="form-group">
+              <label>Device ID</label>
+              <div className="inline-row">
+                <input
+                  type="text"
+                  value={formData.device_id}
+                  onChange={e=>setFormData({...formData,device_id:e.target.value})}
+                  placeholder="SENSOR001"
+                  required
+                />
+                <button type="button" className="btn btn-inline" onClick={() => { setError(''); setShowScanner(true); }}>
+                  Scan
+                </button>
+              </div>
+              <div style={{marginTop:'8px',fontSize:'12px',color:'#888'}}>
+                Scan a QR code or barcode to fill the Device ID.
+              </div>
+            </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-grey" onClick={onClose}>Cancel</button>
               <button type="submit" className="btn">Add Device</button>
             </div>
           </form>
         </div>
+        {showScanner && (
+          <CameraScannerModal
+            onClose={() => setShowScanner(false)}
+            onDetected={(raw) => {
+              setFormData(p => ({ ...p, device_id: raw }));
+              setShowScanner(false);
+            }}
+          />
+        )}
       </div>
     );
   }
