@@ -1,0 +1,36 @@
+Sensor Integration System — Automated API verification
+Generated: 2026-03-30T15:37:37.794Z
+Base URL: http://127.0.0.1:3001
+————————————————————————————————————————————————————————————
+[PASS] TS-02 / no Authorization — HTTP 401
+[PASS] TS-02 / invalid JWT — HTTP 403
+[PASS] TS-01 / weak password rejected — HTTP 400
+[PASS] TS-01 / register success — HTTP 201
+[PASS] TS-02 / wrong password 401 — HTTP 401
+[PASS] TS-02 / lockout after failures — HTTP 403
+[PASS] TS-12 / admin login — HTTP 200
+[PASS] TS-12 / find locked user — id=22
+[PASS] TS-12 / unlock — HTTP 200
+[PASS] TS-02 / login after unlock — HTTP 200
+[PASS] TS-07 / add device — HTTP 201
+[PASS] TS-08 / generate data — HTTP 200
+[PASS] TS-09 / sensor list limit — count=1
+[PASS] TS-10 / CSV export limit=2 — lines=2
+[PASS] TS-10 / JSON export — len=1
+[PASS] TS-14 / user blocked from admin — HTTP 403
+[PASS] TS-04 / change password API — HTTP 200
+[PASS] TS-04 / old password invalid — HTTP 401
+[PASS] TS-04 / new password login — HTTP 200
+[PASS] TS-05 / PATCH account — HTTP 200
+[PASS] TS-03 / forgot unknown 404 — HTTP 404
+————————————————————————————————————————————————————————————
+Summary: 21/21 checks passed.
+
+Manual steps (mark in SIS_Test_Scripts_v1.0.docx):
+  TS-01 steps 1–2,7–8: UI registration flow and validation messages
+  TS-03 steps 1–3: Gmail / forgot-password email (optional if no mail)
+  TS-06, TS-11: self-deactivate UI; threshold alert email
+  TS-07: QR scan, cross-user device isolation in browser
+  TS-08 step 2: wait 6 minutes for offline badge
+  TS-15 step 5: expired JWT (24h) or tampered exp
+  TS-16: DB manipulation + job triggers as in test script

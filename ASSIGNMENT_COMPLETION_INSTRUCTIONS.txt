@@ -1,0 +1,52 @@
+Sensor Integration System — How to finish your testing assignment
+================================================================
+
+What to turn in (typical course expectations)
+---------------------------------------------
+1. SIS_Test_Plan_v1.0.docx          — your test plan (already filled for SIS).
+2. SIS_Test_Scripts_v1.0.docx       — your test scripts (TS-01 … TS-16).
+3. Evidence of execution:
+   • Run:  npm run verify-assignment
+   • Attach or print:  Test_Execution_Automated_Results.txt
+4. In SIS_Test_Scripts_v1.0.docx, fill the Pass/Fail column for each step:
+   • For steps covered by the automated run (auth, devices, sensor API, export,
+     admin block, change password, account PATCH, forgot-password 404), you can
+     mark Pass and reference “Automated: verify-assignment” in the Notes column
+     if your instructor allows it.
+   • Complete the remaining steps in the browser (see list below).
+
+Run the automated checks
+------------------------
+From this project folder:
+
+  npm run verify-assignment
+
+The script starts the server, runs 21 API checks, writes
+Test_Execution_Automated_Results.txt, then exits. Exit code 0 means all checks passed.
+
+UI features added to match the scripts
+--------------------------------------
+• Profile: Change Password (TS-04).
+• Device card: “View Data”, Rows limit (TS-09), Export max rows + CSV + JSON (TS-10).
+• Account update success message aligned with API (TS-05).
+
+Manual steps to mark in Word (no automation)
+--------------------------------------------
+• TS-01: Login screen, Sign Up link, duplicate registration, phone format errors.
+• TS-03: Full forgot-password email flow (optional if Gmail not configured).
+• TS-06: Self-deactivation flow and admin re-enable.
+• TS-07: QR/barcode scan; confirm User B cannot see User A’s devices.
+• TS-08: Wait ~6 minutes without “Generate Data” to see offline status.
+• TS-11: Threshold breach email (needs Gmail + threshold setup).
+• TS-12: Admin panel buttons (Disable/Enable/Reset/Delete) and activity log UI.
+• TS-13: Stat cards after UI actions.
+• TS-15: Deactivated-user token rejection in browser; expired JWT (24 h or manual).
+• TS-16: SQLite inserts and job behaviour as described in the script.
+
+Default test accounts (from database.js / test plan)
+----------------------------------------------------
+Super admin:  admin@system.local  /  Admin123!
+
+Optional: keep Test_Plan_template / Test_Script_template only if the rubric
+requires the generic NASA-style template; otherwise the SIS_* documents are
+the correct project-specific deliverables.

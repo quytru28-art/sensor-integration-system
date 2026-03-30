@@ -92,6 +92,21 @@ const logAdminAction = (adminId, action, targetUserId, details, ipAddress) => {
   );
 };
 
+const sendFailedLoginEmail = async (user, req, reason) => {
+  db.get('SELECT alert_on_failed_login FROM users WHERE id = ?', [user.id], async (err, u) => {
+    if (err || !u || u.alert_on_failed_login === 0 || !process.env.GMAIL_USER) return;
+    const recipient = toClientEmail(user.email) || process.env.GMAIL_USER;
+    try {
+      await mailer.sendMail({
+        from: `"Sensor System" <${process.env.GMAIL_USER}>`,
+        to: recipient,
+        subject: `⚠️ Failed Login — ${user.username}`,
+        html: `<div style="font-family:sans-serif;padding:20px;"><h3>Failed Login Attempt</h3><p><strong>User:</strong> ${user.username}</p><p><strong>Reason:</strong> ${reason}</p><p><strong>Time:</strong> ${new Date().toLocaleString()}</p><p><strong>IP:</strong> ${req.ip || req.connection?.remoteAddress || 'unknown'}</p></div>`
+      });
+    } catch (e) { console.error('Failed login email error:', e); }
+  });
+};
+
 // ========== AUTHENTICATION ROUTES ==========
 
 // Register
@@ -167,17 +182,18 @@ const handleLogin = async (req, res, user) => {
 
   if (!validPassword) {
     const newAttempts = (user.failed_attempts || 0) + 1;
+    db.run('UPDATE users SET failed_attempts = ? WHERE id = ?', [newAttempts, user.id]);
     if (newAttempts >= MAX_ATTEMPTS) {
-      db.run('UPDATE users SET failed_attempts = ?, is_locked = 1 WHERE id = ?', [newAttempts, user.id]);
+      db.run('UPDATE users SET is_locked = 1 WHERE id = ?', [user.id]);
+      sendFailedLoginEmail(user, req, 'Account locked after 5 failed attempts');
       return res.status(403).json({
         error: `Account locked after ${MAX_ATTEMPTS} failed attempts. Use "Forgot Password" or contact admin.`,
         locked: true
       });
-    } else {
-      db.run('UPDATE users SET failed_attempts = ? WHERE id = ?', [newAttempts, user.id]);
-      const left = MAX_ATTEMPTS - newAttempts;
-      return res.status(401).json({ error: `Invalid credentials. ${left} attempt${left === 1 ? '' : 's'} left before lockout.` });
     }
+    sendFailedLoginEmail(user, req, 'Invalid password attempt');
+    const left = MAX_ATTEMPTS - newAttempts;
+    return res.status(401).json({ error: `Invalid credentials. ${left} attempt${left === 1 ? '' : 's'} left before lockout.` });
   }
 
   db.run('UPDATE users SET failed_attempts = 0, is_locked = 0, last_login = ? WHERE id = ?', [new Date().toISOString(), user.id]);
@@ -236,9 +252,9 @@ app.post('/api/auth/login', (req, res) => {
 
 // Get current user
 app.get('/api/auth/me', authenticateToken, (req, res) => {
-  db.get('SELECT id, username, email, phone, is_admin, must_change_password FROM users WHERE id = ?', [req.user.id], (err, user) => {
+  db.get('SELECT id, username, email, phone, is_admin, must_change_password, retention_days, alert_on_failed_login FROM users WHERE id = ?', [req.user.id], (err, user) => {
     if (err) return res.status(500).json({ error: 'Server error' });
-    res.json({ ...user, email: toClientEmail(user.email) });
+    res.json({ ...user, email: toClientEmail(user.email), retention_days: user.retention_days ?? 365, alert_on_failed_login: user.alert_on_failed_login ?? 1 });
   });
 });
 
@@ -317,6 +333,46 @@ app.post('/api/account/change-password', authenticateToken, async (req, res) => 
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
+// ========== UPDATE ACCOUNT (email, phone, retention, alert) ==========
+app.patch('/api/account', authenticateToken, (req, res) => {
+  const { email, phone, retention_days, alert_on_failed_login } = req.body;
+  const updates = [];
+  const params = [];
+
+  if (email !== undefined && String(email).trim()) {
+    const norm = normalizeEmail(email);
+    if (!norm.includes('@')) return res.status(400).json({ error: 'Valid email required' });
+    updates.push('email = ?');
+    params.push(norm);
+  }
+  if (phone !== undefined) {
+    const norm = normalizePhone(phone);
+    if (norm && norm.length !== 10) return res.status(400).json({ error: 'Phone must be 10 digits or empty' });
+    updates.push('phone = ?');
+    params.push(norm || null);
+  }
+  if (retention_days !== undefined) {
+    const d = parseInt(retention_days, 10);
+    if (isNaN(d) || d < 1 || d > 3650) return res.status(400).json({ error: 'Retention must be 1–3650 days' });
+    updates.push('retention_days = ?');
+    params.push(d);
+  }
+  if (alert_on_failed_login !== undefined) {
+    updates.push('alert_on_failed_login = ?');
+    params.push(alert_on_failed_login ? 1 : 0);
+  }
+  if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+  params.push(req.user.id);
+  db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params, function(err) {
+    if (err) {
+      if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Email or phone already in use' });
+      return res.status(500).json({ error: 'Error updating account' });
+    }
+    res.json({ message: 'Account updated successfully' });
+  });
+});
+
 // ========== SELF DEACTIVATE ==========
 
 app.post('/api/account/deactivate', authenticateToken, (req, res) => {
@@ -332,10 +388,18 @@ app.post('/api/account/deactivate', authenticateToken, (req, res) => {
 
 // ========== DEVICE ROUTES ==========
 
+const OFFLINE_MINUTES = 5;
 app.get('/api/devices', authenticateToken, (req, res) => {
   db.all('SELECT * FROM devices WHERE user_id = ?', [req.user.id], (err, devices) => {
     if (err) return res.status(500).json({ error: 'Error fetching devices' });
-    res.json(devices);
+    const now = Date.now();
+    const limitMs = OFFLINE_MINUTES * 60 * 1000;
+    const result = (devices || []).map((d) => {
+      const lastSeen = d.last_seen_at ? new Date(d.last_seen_at).getTime() : 0;
+      const status = lastSeen && (now - lastSeen) < limitMs ? 'online' : 'offline';
+      return { ...d, status, last_seen_at: d.last_seen_at };
+    });
+    res.json(result);
   });
 });
 
@@ -355,6 +419,26 @@ app.post('/api/devices', authenticateToken, (req, res) => {
   );
 });
 
+app.patch('/api/devices/:id', authenticateToken, (req, res) => {
+  const { device_name, device_type, collection_interval_minutes, min_temperature, max_temperature, min_humidity, max_humidity, min_pressure, max_pressure } = req.body;
+  if (!device_name || !device_type) return res.status(400).json({ error: 'Device name and type are required' });
+  const interval = collection_interval_minutes != null ? Math.max(1, Math.min(1440, parseInt(collection_interval_minutes, 10) || 10)) : (req.body.collection_interval_minutes === '' ? null : undefined);
+  const def = (v) => (v === '' || v === null || v === undefined) ? null : (parseFloat(v) || null);
+  const params = [device_name, device_type, interval ?? 10, def(min_temperature), def(max_temperature), def(min_humidity), def(max_humidity), def(min_pressure), def(max_pressure), req.params.id, req.user.id];
+  db.run(
+    'UPDATE devices SET device_name = ?, device_type = ?, collection_interval_minutes = ?, min_temperature = ?, max_temperature = ?, min_humidity = ?, max_humidity = ?, min_pressure = ?, max_pressure = ? WHERE id = ? AND user_id = ?',
+    params,
+    function(err) {
+      if (err) return res.status(500).json({ error: 'Error updating device' });
+      if (this.changes === 0) return res.status(404).json({ error: 'Device not found' });
+      db.get('SELECT * FROM devices WHERE id = ?', [req.params.id], (err, device) => {
+        if (err || !device) return res.status(500).json({ error: 'Error fetching updated device' });
+        res.json({ message: 'Device updated successfully', device });
+      });
+    }
+  );
+});
+
 app.delete('/api/devices/:id', authenticateToken, (req, res) => {
   db.run('DELETE FROM devices WHERE id = ? AND user_id = ?', [req.params.id, req.user.id], function(err) {
     if (err) return res.status(500).json({ error: 'Error deleting device' });
@@ -365,26 +449,131 @@ app.delete('/api/devices/:id', authenticateToken, (req, res) => {
 
 // ========== SENSOR DATA ROUTES ==========
 
+const sanitizeDatetime = (s) => {
+  if (!s || typeof s !== 'string') return null;
+  const t = s.trim().replace('T', ' ');
+  return /^\d{4}-\d{2}-\d{2}/.test(t) ? (t.length <= 16 ? t + ':00' : t) : null;
+};
+
 app.get('/api/sensor-data/:deviceId', authenticateToken, (req, res) => {
   const { deviceId } = req.params;
-  const limit = req.query.limit || 50;
+  const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+  const from = sanitizeDatetime(req.query.from);
+  const to = sanitizeDatetime(req.query.to);
+
   db.get('SELECT * FROM devices WHERE device_id = ? AND user_id = ?', [deviceId, req.user.id], (err, device) => {
     if (err || !device) return res.status(404).json({ error: 'Device not found' });
-    db.all('SELECT * FROM sensor_data WHERE device_id = ? ORDER BY timestamp DESC LIMIT ?', [deviceId, limit], (err, data) => {
+
+    let sql = 'SELECT * FROM sensor_data WHERE device_id = ?';
+    const params = [deviceId];
+
+    if (from && to) {
+      sql += ' AND datetime(timestamp) BETWEEN datetime(?) AND datetime(?)';
+      params.push(from, to);
+    } else if (from) {
+      sql += ' AND datetime(timestamp) >= datetime(?)';
+      params.push(from);
+    } else if (to) {
+      sql += ' AND datetime(timestamp) <= datetime(?)';
+      params.push(to);
+    }
+
+    sql += ' ORDER BY timestamp DESC LIMIT ?';
+    params.push(limit);
+
+    db.all(sql, params, (err, data) => {
       if (err) return res.status(500).json({ error: 'Error fetching sensor data' });
       res.json(data);
     });
   });
 });
 
+app.get('/api/sensor-data/:deviceId/export', authenticateToken, (req, res) => {
+  const { deviceId } = req.params;
+  const format = (req.query.format || 'csv').toLowerCase();
+  const from = sanitizeDatetime(req.query.from);
+  const to = sanitizeDatetime(req.query.to);
+  const limit = Math.min(parseInt(req.query.limit) || 1000, 5000);
+
+  db.get('SELECT * FROM devices WHERE device_id = ? AND user_id = ?', [deviceId, req.user.id], (err, device) => {
+    if (err || !device) return res.status(404).json({ error: 'Device not found' });
+
+    let sql = 'SELECT timestamp, temperature, humidity, pressure FROM sensor_data WHERE device_id = ?';
+    const params = [deviceId];
+
+    if (from && to) {
+      sql += ' AND datetime(timestamp) BETWEEN datetime(?) AND datetime(?)';
+      params.push(from, to);
+    } else if (from) {
+      sql += ' AND datetime(timestamp) >= datetime(?)';
+      params.push(from);
+    } else if (to) {
+      sql += ' AND datetime(timestamp) <= datetime(?)';
+      params.push(to);
+    }
+
+    sql += ' ORDER BY timestamp DESC LIMIT ?';
+    params.push(limit);
+
+    db.all(sql, params, (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Error exporting sensor data' });
+      if (format === 'csv') {
+        const header = 'timestamp,temperature,humidity,pressure\n';
+        const body = (rows || []).map(r => `${r.timestamp || ''},${r.temperature ?? ''},${r.humidity ?? ''},${r.pressure ?? ''}`).join('\n');
+        const csv = header + body;
+        const filename = `sensor-data-${device.device_id}-${new Date().toISOString().slice(0, 10)}.csv`;
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(csv);
+      } else {
+        res.json(rows);
+      }
+    });
+  });
+});
+
+const sendThresholdAlertEmail = async (device, user, reading, breaches) => {
+  if (!process.env.GMAIL_USER) return;
+  const recipient = toClientEmail(user.email) || process.env.GMAIL_USER;
+  try {
+    await mailer.sendMail({
+      from: `"Sensor System" <${process.env.GMAIL_USER}>`,
+      to: recipient,
+      subject: `⚠️ Sensor Alert — ${device.device_name} (${device.device_id})`,
+      html: `<div style="font-family:sans-serif;padding:20px;"><h3>Threshold Exceeded</h3><p><strong>Device:</strong> ${device.device_name} (${device.device_id})</p><p><strong>Breaches:</strong> ${breaches.join('; ')}</p><p>Temp: ${reading.temp}°C, Humidity: ${reading.humidity}%, Pressure: ${reading.pressure} hPa</p><p><strong>Time:</strong> ${new Date().toLocaleString()}</p></div>`
+    });
+  } catch (e) { console.error('Threshold alert email error:', e); }
+};
+
 app.post('/api/demo/generate-data/:deviceId', authenticateToken, (req, res) => {
   const { deviceId } = req.params;
-  const temperature = (Math.random() * 15 + 18).toFixed(2);
-  const humidity = (Math.random() * 30 + 40).toFixed(2);
-  const pressure = (Math.random() * 50 + 980).toFixed(2);
-  db.run('INSERT INTO sensor_data (device_id, temperature, humidity, pressure) VALUES (?, ?, ?, ?)', [deviceId, temperature, humidity, pressure], function(err) {
-    if (err) return res.status(500).json({ error: 'Error generating data' });
-    res.json({ temperature, humidity, pressure });
+  const temperature = parseFloat((Math.random() * 15 + 18).toFixed(2));
+  const humidity = parseFloat((Math.random() * 30 + 40).toFixed(2));
+  const pressure = parseFloat((Math.random() * 50 + 980).toFixed(2));
+
+  db.get('SELECT d.*, u.email, u.alert_on_failed_login FROM devices d JOIN users u ON d.user_id = u.id WHERE d.device_id = ? AND d.user_id = ?', [deviceId, req.user.id], (err, device) => {
+    if (err || !device) return res.status(404).json({ error: 'Device not found' });
+
+    db.run('INSERT INTO sensor_data (device_id, temperature, humidity, pressure) VALUES (?, ?, ?, ?)', [deviceId, temperature, humidity, pressure], function(insErr) {
+      if (insErr) return res.status(500).json({ error: 'Error generating data' });
+
+      db.run('UPDATE devices SET last_seen_at = ?, status = ? WHERE device_id = ?', [new Date().toISOString(), 'online', deviceId]);
+
+      const breaches = [];
+      if (device.min_temperature != null && temperature < device.min_temperature) breaches.push(`Temp ${temperature} < min ${device.min_temperature}`);
+      if (device.max_temperature != null && temperature > device.max_temperature) breaches.push(`Temp ${temperature} > max ${device.max_temperature}`);
+      if (device.min_humidity != null && humidity < device.min_humidity) breaches.push(`Humidity ${humidity} < min ${device.min_humidity}`);
+      if (device.max_humidity != null && humidity > device.max_humidity) breaches.push(`Humidity ${humidity} > max ${device.max_humidity}`);
+      if (device.min_pressure != null && pressure < device.min_pressure) breaches.push(`Pressure ${pressure} < min ${device.min_pressure}`);
+      if (device.max_pressure != null && pressure > device.max_pressure) breaches.push(`Pressure ${pressure} > max ${device.max_pressure}`);
+      if (breaches.length > 0) {
+        db.get('SELECT email FROM users WHERE id = ?', [req.user.id], (e, u) => {
+          sendThresholdAlertEmail(device, u || { email: device.email }, { temp: temperature, humidity, pressure }, breaches);
+        });
+      }
+
+      res.json({ temperature, humidity, pressure });
+    });
   });
 });
 
@@ -531,7 +720,7 @@ app.post('/api/setup-admin', async (req, res) => {
   });
 });
 
-// ========== 2-MONTH CLEANUP JOB ==========
+// ========== CLEANUP JOBS ==========
 
 function runCleanupJob() {
   const cutoff = new Date();
@@ -545,8 +734,30 @@ function runCleanupJob() {
     }
   );
 }
+
+function runRetentionJob() {
+  db.all('SELECT id, retention_days FROM users WHERE retention_days IS NOT NULL AND retention_days > 0', [], (err, users) => {
+    if (err) { console.error('Retention job error:', err); return; }
+    users.forEach((u) => {
+      const days = Math.min(3650, Math.max(1, u.retention_days || 365));
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      db.run(
+        'DELETE FROM sensor_data WHERE device_id IN (SELECT device_id FROM devices WHERE user_id = ?) AND datetime(timestamp) < datetime(?)',
+        [u.id, cutoff.toISOString()],
+        function(delErr) {
+          if (delErr) console.error('Retention delete error:', delErr);
+          else if (this.changes > 0) console.log(`[Retention] Deleted ${this.changes} old readings for user ${u.id}`);
+        }
+      );
+    });
+  });
+}
+
 runCleanupJob();
+runRetentionJob();
 setInterval(runCleanupJob, 24 * 60 * 60 * 1000);
+setInterval(runRetentionJob, 24 * 60 * 60 * 1000);
 
 // ========== START ==========
 

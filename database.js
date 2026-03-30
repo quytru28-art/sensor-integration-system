@@ -151,6 +151,13 @@ db.serialize(() => {
     },
   );
 
+  db.run(`ALTER TABLE users ADD COLUMN retention_days INTEGER DEFAULT 365`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+  db.run(`ALTER TABLE users ADD COLUMN alert_on_failed_login INTEGER DEFAULT 1`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+
   /* ================= DEVICES TABLE ================= */
 
   db.run(`
@@ -165,6 +172,31 @@ db.serialize(() => {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+  db.run(`ALTER TABLE devices ADD COLUMN last_seen_at DATETIME`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+  db.run(`ALTER TABLE devices ADD COLUMN collection_interval_minutes INTEGER DEFAULT 10`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+  db.run(`ALTER TABLE devices ADD COLUMN min_temperature REAL`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+  db.run(`ALTER TABLE devices ADD COLUMN max_temperature REAL`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+  db.run(`ALTER TABLE devices ADD COLUMN min_humidity REAL`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+  db.run(`ALTER TABLE devices ADD COLUMN max_humidity REAL`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+  db.run(`ALTER TABLE devices ADD COLUMN min_pressure REAL`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+  db.run(`ALTER TABLE devices ADD COLUMN max_pressure REAL`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
 
   /* ================= SENSOR DATA ================= */
 

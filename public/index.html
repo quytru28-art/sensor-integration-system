@@ -7,6 +7,7 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/chart.js@4/dist/chart.umd.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
@@ -53,6 +54,7 @@
     .device-info h3 { color: #333; margin-bottom: 4px; }
     .device-type { color: #666; font-size: 13px; }
     .device-status { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; background: #d4edda; color: #155724; }
+    .device-status.offline { background: #f8d7da; color: #721c24; }
     .sensor-readings { margin: 15px 0; padding: 14px; background: #f8f9fa; border-radius: 8px; }
     .reading { display: flex; justify-content: space-between; margin: 7px 0; font-size: 14px; }
     .reading-label { color: #666; font-weight: 500; }
@@ -177,6 +179,20 @@
     .scanner-help { font-size: 13px; color: #666; margin-top: 10px; line-height: 1.4; }
     .inline-row { display: flex; gap: 10px; align-items: center; }
     .inline-row .btn-inline { width: auto; padding: 10px 12px; font-size: 13px; white-space: nowrap; }
+
+    /* SENSOR HISTORY & FILTER */
+    .sensor-history { margin-top: 14px; border-top: 1px solid #eee; padding-top: 12px; }
+    .sensor-history h4 { font-size: 14px; color: #555; margin-bottom: 10px; }
+    .history-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+    .history-filters input[type="datetime-local"] { padding: 6px 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 13px; }
+    .history-table { width: 100%; font-size: 12px; border-collapse: collapse; max-height: 240px; overflow-y: auto; display: block; }
+    .history-table th, .history-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #eee; }
+    .history-table th { background: #f4f5f7; color: #555; }
+    .history-table-wrapper { max-height: 220px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; }
+    .chart-container { height: 200px; margin: 10px 0; position: relative; }
+    .out-of-range { background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 6px; }
+    .device-actions-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .device-actions-row .btn { flex: 0 0 auto; width: auto; padding: 8px 14px; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -519,7 +535,41 @@
   // ===== PROFILE MODAL =====
   function UserProfileModal({ user, onClose, inactivityTimeout, setInactivityTimeout, onDeactivate }) {
     const [localTimeout, setLocalTimeout] = useState(inactivityTimeout);
+    const [fullUser, setFullUser] = useState(null);
+    const [editEmail, setEditEmail] = useState('');
+    const [editPhone, setEditPhone] = useState('');
+    const [retentionDays, setRetentionDays] = useState(365);
+    const [alertOnFailedLogin, setAlertOnFailedLogin] = useState(true);
+    const [accountError, setAccountError] = useState('');
+    const [accountSuccess, setAccountSuccess] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmNewPassword, setConfirmNewPassword] = useState('');
+    const [pwChangeError, setPwChangeError] = useState('');
+    const [pwChangeSuccess, setPwChangeSuccess] = useState('');
+    const validatePw = p => p.length>=8&&/[A-Z]/.test(p)&&/[a-z]/.test(p)&&/[0-9]/.test(p)&&/[^A-Za-z0-9]/.test(p);
+    useEffect(() => {
+      const token = localStorage.getItem('token');
+      fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.ok ? r.json() : null).then(u => { if (u) { setFullUser(u); setEditEmail(u.email||''); setEditPhone(u.phone||''); setRetentionDays(u.retention_days??365); setAlertOnFailedLogin(u.alert_on_failed_login!==0); } });
+    }, []);
     const handleSave = () => { setInactivityTimeout(localTimeout); localStorage.setItem('inactivityTimeout', localTimeout); alert('Settings saved!'); onClose(); };
+    const handleAccountUpdate = async () => {
+      setAccountError(''); setAccountSuccess('');
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/account`, { method:'PATCH', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({ email: editEmail||undefined, phone: editPhone||undefined, retention_days: retentionDays, alert_on_failed_login: alertOnFailedLogin }) });
+      const data = await res.json();
+      if (res.ok) { setAccountSuccess(data.message || 'Account updated successfully.'); } else setAccountError(data.error||'Update failed');
+    };
+    const handleProfileChangePassword = async () => {
+      setPwChangeError(''); setPwChangeSuccess('');
+      if (!validatePw(newPassword)) { setPwChangeError('Password does not meet all requirements.'); return; }
+      if (newPassword !== confirmNewPassword) { setPwChangeError('Passwords do not match.'); return; }
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/account/change-password`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({newPassword}) });
+      const data = await res.json();
+      if (res.ok) { setPwChangeSuccess(data.message || 'Password changed successfully.'); setNewPassword(''); setConfirmNewPassword(''); }
+      else setPwChangeError(data.error || 'Change failed');
+    };
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="profile-modal" onClick={e=>e.stopPropagation()}>
@@ -528,10 +578,32 @@
             <h4>Account Information</h4>
             <div className="profile-info">
               <p><strong>Username:</strong> {user.username}</p>
-              <p><strong>Email / Phone:</strong> {user.email || user.phone || 'Not provided'}</p>
               <p><strong>User ID:</strong> {user.id}</p>
               <p><strong>Role:</strong> {user.is_admin ? '🛠 Admin' : 'User'}</p>
             </div>
+            <h4 style={{marginTop:'12px'}}>Edit Email & Phone</h4>
+            {accountError && <div className="error-message">{accountError}</div>}
+            {accountSuccess && <div className="success-message">{accountSuccess}</div>}
+            <div className="form-group"><label>Email</label><input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} placeholder="you@example.com" /></div>
+            <div className="form-group"><label>Phone (10 digits)</label><input type="text" value={editPhone} onChange={e=>setEditPhone(e.target.value.replace(/\D/g,'').slice(0,10))} placeholder="1234567890" /></div>
+            <div className="form-group"><label>Data retention (days)</label><input type="number" min="1" max="3650" value={retentionDays} onChange={e=>setRetentionDays(parseInt(e.target.value)||365)} /></div>
+            <div className="form-group"><label><input type="checkbox" checked={alertOnFailedLogin} onChange={e=>setAlertOnFailedLogin(e.target.checked)} /> Email me on failed login attempts</label></div>
+            <button type="button" className="btn btn-inline" onClick={handleAccountUpdate}>Update Account</button>
+          </div>
+          <div className="profile-section">
+            <h4>Change Password</h4>
+            {pwChangeError && <div className="error-message">{pwChangeError}</div>}
+            {pwChangeSuccess && <div className="success-message">{pwChangeSuccess}</div>}
+            <div className="form-group">
+              <label>New Password</label>
+              <input type="password" value={newPassword} onChange={e=>{ setNewPassword(e.target.value); setPwChangeError(''); }} />
+              <PwRequirements password={newPassword} />
+            </div>
+            <div className="form-group">
+              <label>Confirm New Password</label>
+              <input type="password" value={confirmNewPassword} onChange={e=>{ setConfirmNewPassword(e.target.value); setPwChangeError(''); }} />
+            </div>
+            <button type="button" className="btn btn-inline" onClick={handleProfileChangePassword} disabled={!validatePw(newPassword)||newPassword!==confirmNewPassword}>Change Password</button>
           </div>
           <div className="profile-section">
             <h4>Security Settings</h4>
@@ -780,35 +852,160 @@
     );
   }
 
+  // ===== EDIT DEVICE MODAL =====
+  function EditDeviceModal({ device, onClose, onSave }) {
+    const [formData, setFormData] = useState({
+      device_name: device.device_name, device_type: device.device_type,
+      collection_interval_minutes: device.collection_interval_minutes ?? 10,
+      min_temperature: device.min_temperature ?? '', max_temperature: device.max_temperature ?? '',
+      min_humidity: device.min_humidity ?? '', max_humidity: device.max_humidity ?? '',
+      min_pressure: device.min_pressure ?? '', max_pressure: device.max_pressure ?? ''
+    });
+    const [error, setError] = useState('');
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      const payload = { ...formData, min_temperature: formData.min_temperature||null, max_temperature: formData.max_temperature||null, min_humidity: formData.min_humidity||null, max_humidity: formData.max_humidity||null, min_pressure: formData.min_pressure||null, max_pressure: formData.max_pressure||null };
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_URL}/devices/${device.id}`, { method:'PATCH', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify(payload) });
+        const data = await res.json();
+        if (res.ok) { onSave(data.device); onClose(); } else setError(data.error);
+      } catch { setError('Failed to update device'); }
+    };
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:'520px'}}>
+          <h3>Edit Device</h3>
+          {error && <div className="error-message">{error}</div>}
+          <form onSubmit={handleSubmit}>
+            <div className="form-group"><label>Device Name</label><input type="text" value={formData.device_name} onChange={e=>setFormData({...formData,device_name:e.target.value})} required /></div>
+            <div className="form-group"><label>Device Type</label><select value={formData.device_type} onChange={e=>setFormData({...formData,device_type:e.target.value})}><option>Temperature</option><option>Humidity</option><option>Environmental</option><option>Motion</option><option>Light</option></select></div>
+            <div className="form-group"><label>Collection interval (minutes)</label><input type="number" min="1" max="1440" value={formData.collection_interval_minutes} onChange={e=>setFormData({...formData,collection_interval_minutes:parseInt(e.target.value)||10})} /></div>
+            <div className="form-group"><label>Thresholds (optional, for alerts)</label>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'4px'}}>
+                <input type="number" step="0.1" placeholder="Min temp" value={formData.min_temperature} onChange={e=>setFormData({...formData,min_temperature:e.target.value})} />
+                <input type="number" step="0.1" placeholder="Max temp" value={formData.max_temperature} onChange={e=>setFormData({...formData,max_temperature:e.target.value})} />
+                <input type="number" step="0.1" placeholder="Min humidity" value={formData.min_humidity} onChange={e=>setFormData({...formData,min_humidity:e.target.value})} />
+                <input type="number" step="0.1" placeholder="Max humidity" value={formData.max_humidity} onChange={e=>setFormData({...formData,max_humidity:e.target.value})} />
+                <input type="number" step="0.1" placeholder="Min pressure" value={formData.min_pressure} onChange={e=>setFormData({...formData,min_pressure:e.target.value})} />
+                <input type="number" step="0.1" placeholder="Max pressure" value={formData.max_pressure} onChange={e=>setFormData({...formData,max_pressure:e.target.value})} />
+              </div>
+            </div>
+            <div className="form-group"><label>Device ID</label><input type="text" value={device.device_id} disabled style={{background:'#f0f0f0',color:'#888'}} /></div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-grey" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn">Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   // ===== DEVICE CARD =====
-  function DeviceCard({ device, onDelete, onGenerateData }) {
+  function DeviceCard({ device, onDelete, onGenerateData, onEdit }) {
+    const chartRef = useRef(null);
     const [sensorData, setSensorData] = useState(null);
     const [loading, setLoading] = useState(false);
-    useEffect(() => { fetchData(); const t = setInterval(fetchData, 10000); return () => clearInterval(t); }, [device.device_id]);
+    const [showHistory, setShowHistory] = useState(false);
+    const [historyData, setHistoryData] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [filterFrom, setFilterFrom] = useState('');
+    const [filterTo, setFilterTo] = useState('');
+    const [historyLimit, setHistoryLimit] = useState(200);
+    const [exportLimit, setExportLimit] = useState(1000);
+    const [showEditModal, setShowEditModal] = useState(false);
+
     const fetchData = async () => {
       try {
         const token = localStorage.getItem('token');
         const res = await fetch(`${API_URL}/sensor-data/${device.device_id}?limit=1`, { headers:{Authorization:`Bearer ${token}`} });
-        if (res.ok) { const d = await res.json(); if(d.length>0) setSensorData(d[0]); }
+        if (res.ok) { const d = await res.json(); if(d&&d.length>0) setSensorData(d[0]); else setSensorData(null); }
       } catch {}
     };
+
+    const fetchHistory = async () => {
+      setHistoryLoading(true);
+      try {
+        const token = localStorage.getItem('token');
+        const lim = Math.min(500, Math.max(1, parseInt(historyLimit, 10) || 200));
+        let url = `${API_URL}/sensor-data/${device.device_id}?limit=${lim}`;
+        if (filterFrom) url += `&from=${filterFrom}`;
+        if (filterTo) url += `&to=${filterTo}`;
+        const res = await fetch(url, { headers:{Authorization:`Bearer ${token}`} });
+        if (res.ok) setHistoryData(await res.json());
+      } catch {} finally { setHistoryLoading(false); }
+    };
+
+    useEffect(() => { fetchData(); const t = setInterval(fetchData, 10000); return () => clearInterval(t); }, [device.device_id]);
+    useEffect(() => { if (showHistory) fetchHistory(); }, [showHistory, device.device_id]);
+
     const handleGenerate = async () => {
       setLoading(true);
       try {
         const token = localStorage.getItem('token');
         await fetch(`${API_URL}/demo/generate-data/${device.device_id}`, { method:'POST', headers:{Authorization:`Bearer ${token}`} });
-        setTimeout(fetchData, 500); onGenerateData();
+        setTimeout(() => { fetchData(); if (showHistory) fetchHistory(); }, 500); onGenerateData();
       } catch {} finally { setLoading(false); }
     };
+
+    const downloadExport = async (format) => {
+      const lim = Math.min(5000, Math.max(1, parseInt(exportLimit, 10) || 1000));
+      let url = `${API_URL}/sensor-data/${device.device_id}/export?format=${format}&limit=${lim}`;
+      if (filterFrom) url += `&from=${encodeURIComponent(filterFrom)}`;
+      if (filterTo) url += `&to=${encodeURIComponent(filterTo)}`;
+      const token = localStorage.getItem('token');
+      try {
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = format === 'csv' ? `sensor-data-${device.device_id}.csv` : `sensor-data-${device.device_id}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch (e) { alert('Export failed. Please try again.'); }
+    };
+
+    const handleEditSave = (updated) => { onEdit(updated); setShowEditModal(false); };
+
+    const isOutOfRange = sensorData && (
+      (device.min_temperature != null && parseFloat(sensorData.temperature) < device.min_temperature) ||
+      (device.max_temperature != null && parseFloat(sensorData.temperature) > device.max_temperature) ||
+      (device.min_humidity != null && parseFloat(sensorData.humidity) < device.min_humidity) ||
+      (device.max_humidity != null && parseFloat(sensorData.humidity) > device.max_humidity) ||
+      (device.min_pressure != null && parseFloat(sensorData.pressure) < device.min_pressure) ||
+      (device.max_pressure != null && parseFloat(sensorData.pressure) > device.max_pressure)
+    );
+
+    useEffect(() => {
+      if (!showHistory || !historyData.length || !window.Chart) return;
+      const reversed = [...historyData].reverse();
+      const ctx = chartRef.current?.getContext('2d');
+      if (!ctx) return;
+      if (chartRef.current._chart) chartRef.current._chart.destroy();
+      chartRef.current._chart = new window.Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: reversed.map(r => new Date(r.timestamp).toLocaleTimeString()),
+          datasets: [
+            { label: 'Temp °C', data: reversed.map(r => r.temperature), borderColor: '#667eea', tension: 0.2, yAxisID: 'y' },
+            { label: 'Humidity %', data: reversed.map(r => r.humidity), borderColor: '#28a745', tension: 0.2, yAxisID: 'y1' }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { type: 'linear', position: 'left' }, y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false } } } }
+      });
+      return () => { if (chartRef.current?._chart) chartRef.current._chart.destroy(); };
+    }, [showHistory, historyData]);
+
     return (
       <div className="device-card">
         <div className="device-header">
-          <div className="device-info"><h3>{device.device_name}</h3><div className="device-type">{device.device_type} • {device.device_id}</div></div>
-          <span className="device-status">{device.status}</span>
+          <div className="device-info"><h3>{device.device_name}</h3><div className="device-type">{device.device_type} • {device.device_id} {device.collection_interval_minutes ? `• ${device.collection_interval_minutes}min` : ''}</div></div>
+          <span className={`device-status ${device.status==='offline'?'offline':''}`}>{device.status}</span>
         </div>
         {sensorData && (
           <div className="sensor-readings">
-            <div className="reading"><span className="reading-label">🌡️ Temperature</span><span className="reading-value">{sensorData.temperature}°C</span></div>
+            <div className="reading"><span className="reading-label">🌡️ Temperature</span><span className="reading-value">{sensorData.temperature}°C {isOutOfRange && <span className="out-of-range">⚠ Out of range</span>}</span></div>
             <div className="reading"><span className="reading-label">💧 Humidity</span><span className="reading-value">{sensorData.humidity}%</span></div>
             <div className="reading"><span className="reading-label">📊 Pressure</span><span className="reading-value">{sensorData.pressure} hPa</span></div>
             <div className="reading"><span className="reading-label">⏰ Last Update</span><span className="reading-value">{new Date(sensorData.timestamp).toLocaleTimeString()}</span></div>
@@ -816,8 +1013,49 @@
         )}
         <div className="device-actions">
           <button className="btn btn-success" onClick={handleGenerate} disabled={loading}>{loading?'Generating...':'Generate Data'}</button>
+          <button className="btn btn-inline" onClick={() => setShowEditModal(true)}>✏️ Edit</button>
+          <button className="btn btn-inline" onClick={() => setShowHistory(!showHistory)}>{showHistory ? '📋 Hide Data' : '📋 View Data'}</button>
           <button className="btn btn-danger" onClick={() => onDelete(device.id)}>Delete</button>
         </div>
+
+        {showHistory && (
+          <div className="sensor-history">
+            <h4>📊 Data Log</h4>
+            {historyData.length > 0 && (
+              <div className="chart-container">
+                <canvas ref={chartRef}></canvas>
+              </div>
+            )}
+            <div className="history-filters">
+              <label style={{fontSize:'12px',color:'#888'}}>From</label>
+              <input type="datetime-local" value={filterFrom} onChange={e=>setFilterFrom(e.target.value)} />
+              <label style={{fontSize:'12px',color:'#888'}}>To</label>
+              <input type="datetime-local" value={filterTo} onChange={e=>setFilterTo(e.target.value)} />
+              <label style={{fontSize:'12px',color:'#888'}}>Rows</label>
+              <input type="number" min="1" max="500" value={historyLimit} onChange={e=>setHistoryLimit(parseInt(e.target.value,10)||200)} style={{width:'72px',padding:'6px 8px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'13px'}} title="Max 500 (matches API)" />
+              <button type="button" className="btn btn-inline" onClick={fetchHistory}>Apply</button>
+              <label style={{fontSize:'12px',color:'#888'}}>Export max rows</label>
+              <input type="number" min="1" max="5000" value={exportLimit} onChange={e=>setExportLimit(parseInt(e.target.value,10)||1000)} style={{width:'80px',padding:'6px 8px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'13px'}} />
+              <button type="button" className="btn btn-inline" onClick={() => downloadExport('csv')}>📥 Export CSV</button>
+              <button type="button" className="btn btn-inline" onClick={() => downloadExport('json')}>📥 Export JSON</button>
+            </div>
+            {historyLoading && <p style={{fontSize:'13px',color:'#888'}}>Loading...</p>}
+            {!historyLoading && (
+              <div className="history-table-wrapper">
+                <table className="history-table">
+                  <thead><tr><th>Timestamp</th><th>Temp (°C)</th><th>Humidity (%)</th><th>Pressure (hPa)</th></tr></thead>
+                  <tbody>
+                    {historyData.length === 0 ? <tr><td colSpan="4" style={{textAlign:'center',color:'#888',padding:'16px'}}>No data</td></tr> : historyData.map(r => (
+                      <tr key={r.id}><td>{new Date(r.timestamp).toLocaleString()}</td><td>{r.temperature}</td><td>{r.humidity}</td><td>{r.pressure}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {showEditModal && <EditDeviceModal device={device} onClose={()=>setShowEditModal(false)} onSave={handleEditSave} />}
       </div>
     );
   }
@@ -913,6 +1151,10 @@
       if (res.ok) setDevices(devices.filter(d=>d.id!==deviceId));
     };
 
+    const handleEditDevice = (updated) => {
+      setDevices(devices.map(d => d.id === updated.id ? updated : d));
+    };
+
     function getActionBadge(action='') {
       const a=action.toLowerCase();
       if(a.includes('disable'))return'badge-action-disable';
@@ -950,7 +1192,7 @@
               </div>
               {devices.length===0
                 ? <div className="empty-state"><h3>No devices yet</h3><p>Add a device to start collecting data</p></div>
-                : <div className="devices-grid">{devices.map(d=><DeviceCard key={d.id} device={d} onDelete={handleDeleteDevice} onGenerateData={fetchDevices}/>)}</div>
+                : <div className="devices-grid">{devices.map(d=><DeviceCard key={d.id} device={d} onDelete={handleDeleteDevice} onGenerateData={fetchDevices} onEdit={handleEditDevice}/>)}</div>
               }
             </>
           )}

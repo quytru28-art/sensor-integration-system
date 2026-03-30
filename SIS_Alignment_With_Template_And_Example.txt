@@ -1,0 +1,105 @@
+SIS Word Documents — Alignment With Test_Plan_template / Test Script_template
+and With Test_Plan_example / Test Script_example (HMMS)
+================================================================================
+
+SUMMARY
+-------
+• SIS Test Plan follows the same MAJOR OUTLINE as the Test Plan EXAMPLE (HMMS):
+  sections 1–3 (intro, strategy, environment) then 4 Test Identification,
+  5 Test Schedules, 6 Requirements Traceability, 7 Risks. That matches the
+  example’s body structure, not the template’s table of contents (which moves
+  test identification into Appendix C).
+
+• SIS Test Plan differs from the generic TEMPLATE in numbering and in missing
+  a few template subsections (Resources, Referenced documents, Readiness
+  criteria, formal appendices A–C).
+
+• SIS Test Scripts follow the same LOGICAL TABLE as the Test Script template
+  and example (test case → procedure → expected result → pass/fail), but SIS
+  adds fields the minimal template omits (Script ID, Severity, Preconditions)
+  and does not repeat the template’s cover fields (Database, Tester Name,
+  Revision, Dates, Execution times) at the top of the file.
+
+
+DETAILED MAPPING — TEST PLAN
+----------------------------
+
+Template section                 | Example (HMMS)        | SIS Test Plan v1.0
+--------------------------------|-----------------------|----------------------------------
+1 Introduction                  | Yes                   | Yes — "1. Introduction"
+  1.1 Scope                     | Yes                   | Yes — "1.1 Scope"
+  1.1.1 Identification          | Under Scope flow      | Yes — "1.2 Identification" (table)
+  1.1.2 Document Overview       | Yes                   | Yes — "1.3 Document Overview"
+  1.2 Resources                 | Yes (as 1.2)          | NOT a separate section (partially
+                                |                       |     implied in 2.2 Approach / 3.x)
+  1.3 Referenced documents      | In template TOC       | NOT present as own section
+2 Software Test Strategy        | Yes                   | Yes — "2. Software Test Strategy"
+  2.1 Objectives                | Yes                   | Yes — "2.1 Objectives"
+  2.2 APPROACH                  | Yes                   | Yes — "2.2 Approach"
+  2.3 Description of Functionality | Template          | Replaced by "2.3 Testing Types"
+  2.3 Specific Exclusions       | Example               | Yes — "2.4 Specific Exclusions"
+  2.4 Dependencies & Assumptions | Template           | Yes — "2.5 Dependencies and Assumptions"
+  2.5 General Criteria for Success | Template         | Yes — "2.6 Criteria for Success"
+  2.5.1 Readiness Criteria      | Template              | NOT present as separate subsection
+  2.5.2–2.5.4 Pass/Complete/Accept | Template         | Yes — "2.6.1–2.6.3"
+3 Software Test environment     | Yes                   | Yes — "3. Software Test Environment"
+  3.1 (test site name)          | Example               | "3.1 Hardware & Software" (combined)
+  3.1.1 Software Items          | Yes                   | Covered inside 3.1 table
+  3.1.2 Hardware …              | Yes                   | Covered inside 3.1 table
+  3.1.3 Other Materials         | Template              | Not explicit
+  3.2 Test Accounts             | (not in template)     | Yes — SIS-specific (appropriate)
+4 Test identification           | Example §4            | Yes — "4. Test Identification"
+5 Test Schedules                | Example §5            | Yes — "5. Test Schedules"
+6 Requirements traceability     | Example §6            | Yes — "6. Requirements Traceability"
+7 Risks                         | Example §7            | Yes — "7. Risks"
+Appendix A Acronym List         | Template / Example    | NOT in SIS plan
+Appendix B Test report          | Template              | NOT in SIS plan
+Appendix C Test Identification  | Template              | N/A — SIS uses §4 instead (like Example)
+
+
+DETAILED MAPPING — TEST SCRIPTS
+-------------------------------
+
+Template / example column or field   | SIS Test Scripts v1.0
+-------------------------------------|------------------------------------------
+Test Script Name                     | Each block titled "TS-xx — …" + "Test Script ID"
+Database                             | Not on cover (SQLite implied in plan §3)
+Tester Name                          | Not on cover (fill when executing)
+Pass/Fail (document level)           | "Pass / Fail (overall):" per script
+Revision Number                      | Version in header ("Version 1.0 | date")
+Username                             | Not on cover
+Test Date / Est. / Actual time       | Not on cover (add by hand if rubric requires)
+Test Objective                       | Yes — "Test Objective:"
+Test Number                          | Yes — numbered "Step" column
+Test Procedures                      | Yes — "Test Action / Procedure"
+Expected Results                     | Yes — "Expected Result"
+Pass/Fail (per step)                 | Yes — "Pass / Fail" column
+Severity / Preconditions             | SIS adds (good for academic rigor)
+
+
+IF YOUR RUBRIC REQUIRES STRICT TEMPLATE MATCHING
+------------------------------------------------
+Add in Word (copy/paste style from Test_Plan_template):
+
+Test Plan — after Document Overview:
+  • "1.4 Resources" — who tests, roles (Tester, Dev, PM).
+  • "1.5 Referenced documents" — link User Stories, SRS, design repo, SIS_Test_Scripts.
+
+Test Plan — inside Strategy:
+  • "2.5.1 Readiness Criteria" (or renumber): test plan approved, environment up,
+    test accounts ready, scripts reviewed.
+
+Test Plan — end matter:
+  • "Appendix A – Acronym List" (SIS, JWT, API, CRUD, SMTP, …).
+  • "Appendix B – Test report" — blank form or pointer to Pass/Fail log.
+
+Test Scripts — before TS-01:
+  • One cover table from Test Script_template (Database: SQLite sensor_system.db;
+    Tester Name; dates; Revision 1.0).
+
+CONCLUSION
+----------
+SIS documents are ALIGNED IN SUBSTANCE with the HMMS-style EXAMPLE (especially
+the test plan sections 4–7). They are NOT a line-for-line match to the generic
+TEMPLATE TOC; the gaps above are normal for a project-specific plan and can be
+filled with short insertions if the course requires literal template compliance.

@@ -8,3 +8,7 @@ npm-debug.log
 *.db-shm
 *.db-wal
 sensor_system.db*
+
+.venv/
+.claude/
+.~lock.*
