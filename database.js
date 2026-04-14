@@ -158,6 +158,10 @@ db.serialize(() => {
     if (err && !err.message.includes("duplicate column")) console.error(err.message);
   });
 
+  db.run(`ALTER TABLE users ADD COLUMN mfa_enabled INTEGER DEFAULT 0`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+
   /* ================= DEVICES TABLE ================= */
 
   db.run(`
@@ -198,6 +202,10 @@ db.serialize(() => {
     if (err && !err.message.includes("duplicate column")) console.error(err.message);
   });
 
+  db.run(`ALTER TABLE devices ADD COLUMN firmware_version TEXT DEFAULT '1.0.0'`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+
   /* ================= SENSOR DATA ================= */
 
   db.run(`
@@ -209,6 +217,91 @@ db.serialize(() => {
       pressure REAL,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (device_id) REFERENCES devices(device_id) ON DELETE CASCADE
+    )
+  `);
+
+  /* ================= MFA TOKENS ================= */
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS mfa_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      code TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used INTEGER DEFAULT 0,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  /* ================= SENSOR GROUPS ================= */
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS sensor_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS group_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      role TEXT NOT NULL DEFAULT 'viewer',
+      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (group_id) REFERENCES sensor_groups(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(group_id, user_id)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS group_devices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      device_id TEXT NOT NULL,
+      added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (group_id) REFERENCES sensor_groups(id) ON DELETE CASCADE,
+      UNIQUE(group_id, device_id)
+    )
+  `);
+
+  /* ================= CUSTOM ALERT RULES ================= */
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS alert_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      device_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      operator TEXT NOT NULL,
+      threshold REAL NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  /* ================= EXPORT SCHEDULES ================= */
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS export_schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      device_id TEXT,
+      name TEXT NOT NULL,
+      frequency TEXT NOT NULL DEFAULT 'weekly',
+      format TEXT NOT NULL DEFAULT 'csv',
+      enabled INTEGER DEFAULT 1,
+      last_run DATETIME,
+      next_run DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
 

@@ -193,6 +193,34 @@
     .out-of-range { background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 6px; }
     .device-actions-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
     .device-actions-row .btn { flex: 0 0 auto; width: auto; padding: 8px 14px; font-size: 13px; }
+
+    /* GROUPS */
+    .groups-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px,1fr)); gap: 18px; }
+    .group-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+    .group-card h3 { color: #333; margin-bottom: 4px; }
+    .group-meta { font-size: 12px; color: #888; margin-bottom: 12px; }
+    .group-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #e8eaff; color: #667eea; margin-left: 6px; }
+    .group-badge.editor { background: #d4edda; color: #155724; }
+    .member-list { font-size: 13px; }
+    .member-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+    .member-row:last-child { border-bottom: none; }
+    .role-select { font-size: 12px; padding: 3px 6px; border: 1px solid #ddd; border-radius: 4px; }
+
+    /* ALERT RULES */
+    .alert-rules-section { margin-top: 12px; border-top: 1px solid #eee; padding-top: 10px; }
+    .rule-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: #f8f9fa; border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
+    .rule-row.disabled-rule { opacity: 0.5; }
+
+    /* FIRMWARE */
+    .firmware-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
+    .firmware-badge { background: #e8eaff; color: #667eea; padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; font-family: monospace; }
+
+    /* EXPORT SCHEDULES */
+    .schedule-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px; font-size: 13px; }
+    .schedule-row.disabled-schedule { opacity: 0.5; }
+
+    /* MFA */
+    .mfa-code-input { text-align: center; letter-spacing: 8px; font-family: monospace; font-size: 24px; font-weight: 700; padding: 14px; border: 2px solid #667eea; border-radius: 8px; width: 100%; }
   </style>
 </head>
 <body>
@@ -280,6 +308,11 @@
     const [forgotId, setForgotId] = useState('');
     const [forgotMsg, setForgotMsg] = useState(null);
     const [forgotLoading, setForgotLoading] = useState(false);
+    // MFA state
+    const [mfaRequired, setMfaRequired] = useState(false);
+    const [mfaToken, setMfaToken] = useState('');
+    const [mfaCode, setMfaCode] = useState('');
+    const [mfaLoading, setMfaLoading] = useState(false);
 
     const generateCode = () => {
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -326,6 +359,12 @@
         const res = await fetch(`${API_URL}${endpoint}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
         const data = await res.json();
         if (res.ok) {
+          if (data.mfa_required) {
+            setMfaToken(data.mfa_token);
+            setMfaRequired(true);
+            setVerificationInput(''); setVerificationCode(''); setShowVerification(false);
+            return;
+          }
           localStorage.setItem('token', data.token);
           localStorage.setItem('user', JSON.stringify(data.user));
           setSuccess(isLogin ? 'Login successful!' : 'Account created!');
@@ -335,6 +374,25 @@
           setVerificationInput(''); setVerificationCode(''); setShowVerification(false);
         }
       } catch { setError('Server connection error.'); }
+    };
+
+    const handleMfaSubmit = async () => {
+      if (!mfaCode.trim()) return;
+      setMfaLoading(true); setError('');
+      try {
+        const res = await fetch(`${API_URL}/auth/mfa/verify-login`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ mfa_token: mfaToken, code: mfaCode.trim() }) });
+        const data = await res.json();
+        if (res.ok) {
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          setSuccess('Login successful!');
+          setTimeout(() => onLogin(data.user), 500);
+        } else {
+          setError(data.error || 'Invalid code. Try again.');
+          setMfaCode('');
+        }
+      } catch { setError('Server connection error.'); }
+      finally { setMfaLoading(false); }
     };
 
     const handleForgotPassword = async () => {
@@ -349,6 +407,26 @@
     };
 
     const switchMode = () => { setIsLogin(!isLogin); setFormData({username:'',identifier:'',password:''}); setVerificationInput(''); setVerificationCode(''); setShowVerification(false); setError(''); setSuccess(''); };
+
+    if (mfaRequired) return (
+      <div className="auth-container">
+        <div className="auth-box">
+          <h2>🔐 Two-Factor Verification</h2>
+          <p style={{color:'#666',fontSize:'14px',marginBottom:'18px'}}>A 6-digit verification code was sent to your registered email. Enter it below to complete login.</p>
+          {error && <div className="error-message">{error}</div>}
+          {success && <div className="success-message">{success}</div>}
+          <div className="form-group">
+            <label>Verification Code</label>
+            <input className="mfa-code-input" type="text" maxLength="6" placeholder="000000"
+              value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,'').slice(0,6))} />
+          </div>
+          <button className="btn" onClick={handleMfaSubmit} disabled={mfaLoading || mfaCode.length < 6}>{mfaLoading ? 'Verifying...' : 'Verify & Login'}</button>
+          <div style={{textAlign:'center',marginTop:'14px'}}>
+            <button className="auth-link" onClick={() => { setMfaRequired(false); setMfaToken(''); setMfaCode(''); setError(''); }}>← Back to Login</button>
+          </div>
+        </div>
+      </div>
+    );
 
     if (showForgot) return (
       <div className="auth-container">
@@ -546,13 +624,68 @@
     const [confirmNewPassword, setConfirmNewPassword] = useState('');
     const [pwChangeError, setPwChangeError] = useState('');
     const [pwChangeSuccess, setPwChangeSuccess] = useState('');
+    // MFA state
+    const [mfaEnabled, setMfaEnabled] = useState(false);
+    const [mfaStep, setMfaStep] = useState(null); // null | 'pending' | 'done'
+    const [mfaOtp, setMfaOtp] = useState('');
+    const [mfaMsg, setMfaMsg] = useState('');
+    // Export schedules
+    const [schedules, setSchedules] = useState([]);
+    const [schedForm, setSchedForm] = useState({ name: '', device_id: '', frequency: 'weekly', format: 'csv' });
+    const [schedMsg, setSchedMsg] = useState('');
+    const [userDevices, setUserDevices] = useState([]);
+
     const validatePw = p => p.length>=8&&/[A-Z]/.test(p)&&/[a-z]/.test(p)&&/[0-9]/.test(p)&&/[^A-Za-z0-9]/.test(p);
     useEffect(() => {
       const token = localStorage.getItem('token');
       fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.ok ? r.json() : null).then(u => { if (u) { setFullUser(u); setEditEmail(u.email||''); setEditPhone(u.phone||''); setRetentionDays(u.retention_days??365); setAlertOnFailedLogin(u.alert_on_failed_login!==0); } });
+      fetch(`${API_URL}/auth/mfa/status`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+        .then(r => r.ok ? r.json() : null).then(d => { if (d) setMfaEnabled(d.mfa_enabled); });
+      fetch(`${API_URL}/export-schedules`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+        .then(r => r.ok ? r.json() : []).then(s => setSchedules(s));
+      fetch(`${API_URL}/devices`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+        .then(r => r.ok ? r.json() : []).then(d => setUserDevices(d));
     }, []);
     const handleSave = () => { setInactivityTimeout(localTimeout); localStorage.setItem('inactivityTimeout', localTimeout); alert('Settings saved!'); onClose(); };
+
+    const handleMfaToggle = async () => {
+      const token = localStorage.getItem('token');
+      if (mfaEnabled) {
+        await fetch(`${API_URL}/auth/mfa/disable`, { method:'POST', headers:{Authorization:`Bearer ${token}`} });
+        setMfaEnabled(false); setMfaStep(null); setMfaMsg('MFA disabled.');
+      } else {
+        const res = await fetch(`${API_URL}/auth/mfa/enable`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:'{}' });
+        const d = await res.json();
+        if (res.ok) { setMfaStep('pending'); setMfaMsg(d.message); } else setMfaMsg(d.error);
+      }
+    };
+    const handleMfaVerify = async () => {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/auth/mfa/enable`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body: JSON.stringify({ code: mfaOtp }) });
+      const d = await res.json();
+      if (res.ok) { setMfaEnabled(true); setMfaStep('done'); setMfaMsg(d.message); setMfaOtp(''); } else setMfaMsg(d.error);
+    };
+
+    const handleAddSchedule = async () => {
+      if (!schedForm.name.trim()) { setSchedMsg('Name is required.'); return; }
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/export-schedules`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body: JSON.stringify({ ...schedForm, device_id: schedForm.device_id || null }) });
+      const d = await res.json();
+      if (res.ok) { setSchedules(s => [...s, d]); setSchedForm({ name:'', device_id:'', frequency:'weekly', format:'csv' }); setSchedMsg('Schedule created.'); }
+      else setSchedMsg(d.error);
+    };
+    const handleToggleSchedule = async (id, enabled) => {
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/export-schedules/${id}`, { method:'PATCH', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body: JSON.stringify({ enabled: !enabled }) });
+      setSchedules(s => s.map(x => x.id === id ? {...x, enabled: x.enabled ? 0 : 1} : x));
+    };
+    const handleDeleteSchedule = async (id) => {
+      if (!confirm('Delete this schedule?')) return;
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/export-schedules/${id}`, { method:'DELETE', headers:{Authorization:`Bearer ${token}`} });
+      setSchedules(s => s.filter(x => x.id !== id));
+    };
     const handleAccountUpdate = async () => {
       setAccountError(''); setAccountSuccess('');
       const token = localStorage.getItem('token');
@@ -615,6 +748,62 @@
               </div>
               <div className="inactivity-warning">⚠️ Auto-logout after {localTimeout} minute(s) of inactivity</div>
             </div>
+          </div>
+
+          <div className="profile-section">
+            <h4>🔐 Two-Factor Authentication (MFA)</h4>
+            {mfaMsg && <div className={mfaEnabled||mfaStep==='done'?'success-message':'error-message'} style={{marginBottom:'10px'}}>{mfaMsg}</div>}
+            <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'10px'}}>
+              <span style={{fontSize:'14px',color:'#555'}}>MFA is currently: <strong style={{color:mfaEnabled?'#28a745':'#dc3545'}}>{mfaEnabled ? 'Enabled' : 'Disabled'}</strong></span>
+              {!mfaEnabled && mfaStep !== 'pending' && <button className="btn btn-success" style={{width:'auto',padding:'7px 16px',fontSize:'13px'}} onClick={handleMfaToggle}>Enable MFA</button>}
+              {mfaEnabled && <button className="btn btn-danger" style={{width:'auto',padding:'7px 16px',fontSize:'13px'}} onClick={handleMfaToggle}>Disable MFA</button>}
+            </div>
+            {mfaStep === 'pending' && (
+              <div>
+                <p style={{fontSize:'13px',color:'#555',marginBottom:'8px'}}>A verification code was sent to your email. Enter it below to activate MFA:</p>
+                <div style={{display:'flex',gap:'8px'}}>
+                  <input className="mfa-code-input" type="text" maxLength="6" placeholder="000000" value={mfaOtp}
+                    onChange={e=>setMfaOtp(e.target.value.replace(/\D/g,'').slice(0,6))} style={{flex:1,fontSize:'18px',padding:'10px',letterSpacing:'6px'}} />
+                  <button className="btn" style={{width:'auto',padding:'10px 16px'}} onClick={handleMfaVerify} disabled={mfaOtp.length<6}>Confirm</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="profile-section">
+            <h4>📅 Scheduled Exports & Backups (US25/US26)</h4>
+            <p style={{fontSize:'13px',color:'#666',marginBottom:'12px'}}>Configure automatic data exports sent to your email on a schedule. Leave device blank to back up all devices.</p>
+            {schedMsg && <div className="success-message" style={{marginBottom:'10px'}}>{schedMsg}</div>}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}}>
+              <input type="text" placeholder="Schedule name" value={schedForm.name} onChange={e=>setSchedForm({...schedForm,name:e.target.value})} style={{padding:'8px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'13px',gridColumn:'1/-1'}} />
+              <select value={schedForm.device_id} onChange={e=>setSchedForm({...schedForm,device_id:e.target.value})} style={{padding:'8px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'13px'}}>
+                <option value="">All Devices (Backup)</option>
+                {userDevices.map(d=><option key={d.device_id} value={d.device_id}>{d.device_name} ({d.device_id})</option>)}
+              </select>
+              <select value={schedForm.frequency} onChange={e=>setSchedForm({...schedForm,frequency:e.target.value})} style={{padding:'8px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'13px'}}>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+              <select value={schedForm.format} onChange={e=>setSchedForm({...schedForm,format:e.target.value})} style={{padding:'8px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'13px'}}>
+                <option value="csv">CSV</option>
+                <option value="json">JSON</option>
+              </select>
+            </div>
+            <button type="button" className="btn" style={{marginBottom:'14px'}} onClick={handleAddSchedule}>Add Schedule</button>
+            {schedules.length === 0 ? <p style={{color:'#aaa',fontSize:'13px'}}>No schedules configured.</p> : schedules.map(s => (
+              <div key={s.id} className={`schedule-row ${s.enabled?'':'disabled-schedule'}`}>
+                <div>
+                  <strong>{s.name}</strong>
+                  <div style={{fontSize:'11px',color:'#888'}}>{s.frequency} · {s.format.toUpperCase()} · {s.device_id || 'All Devices'}</div>
+                  {s.next_run && <div style={{fontSize:'11px',color:'#aaa'}}>Next: {new Date(s.next_run).toLocaleString()}</div>}
+                </div>
+                <div style={{display:'flex',gap:'6px'}}>
+                  <button className={`sa-btn ${s.enabled?'sa-btn-warning':'sa-btn-success'}`} onClick={()=>handleToggleSchedule(s.id,s.enabled)}>{s.enabled?'Pause':'Resume'}</button>
+                  <button className="sa-btn sa-btn-danger" onClick={()=>handleDeleteSchedule(s.id)}>Delete</button>
+                </div>
+              </div>
+            ))}
           </div>
           <div className="profile-section">
             <h4>Danger Zone</h4>
@@ -915,6 +1104,16 @@
     const [historyLimit, setHistoryLimit] = useState(200);
     const [exportLimit, setExportLimit] = useState(1000);
     const [showEditModal, setShowEditModal] = useState(false);
+    // Alert rules (US18)
+    const [showRules, setShowRules] = useState(false);
+    const [rules, setRules] = useState([]);
+    const [ruleForm, setRuleForm] = useState({ name:'', metric:'temperature', operator:'above', threshold:'' });
+    const [ruleMsg, setRuleMsg] = useState('');
+    // Firmware (US23)
+    const [showFirmware, setShowFirmware] = useState(false);
+    const [firmwareVersion, setFirmwareVersion] = useState(device.firmware_version || '1.0.0');
+    const [newFirmware, setNewFirmware] = useState('');
+    const [firmwareMsg, setFirmwareMsg] = useState('');
 
     const fetchData = async () => {
       try {
@@ -968,6 +1167,40 @@
 
     const handleEditSave = (updated) => { onEdit(updated); setShowEditModal(false); };
 
+    const fetchRules = async () => {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/devices/${device.device_id}/alert-rules`, { headers:{Authorization:`Bearer ${token}`} });
+      if (res.ok) setRules(await res.json());
+    };
+    const handleAddRule = async () => {
+      if (!ruleForm.name.trim() || ruleForm.threshold === '') { setRuleMsg('All fields required.'); return; }
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/devices/${device.device_id}/alert-rules`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body: JSON.stringify(ruleForm) });
+      const d = await res.json();
+      if (res.ok) { setRules(r => [...r, d]); setRuleForm({name:'',metric:'temperature',operator:'above',threshold:''}); setRuleMsg('Rule created.'); }
+      else setRuleMsg(d.error);
+    };
+    const handleToggleRule = async (id, enabled) => {
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/alert-rules/${id}`, { method:'PATCH', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body: JSON.stringify({ enabled: !enabled }) });
+      setRules(r => r.map(x => x.id===id ? {...x, enabled: x.enabled?0:1} : x));
+    };
+    const handleDeleteRule = async (id) => {
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/alert-rules/${id}`, { method:'DELETE', headers:{Authorization:`Bearer ${token}`} });
+      setRules(r => r.filter(x => x.id !== id));
+    };
+    const handleShowRules = () => { if (!showRules) fetchRules(); setShowRules(!showRules); setRuleMsg(''); };
+
+    const handleFirmwareUpdate = async () => {
+      if (!newFirmware.trim()) { setFirmwareMsg('Enter a version string.'); return; }
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/devices/${device.id}/firmware`, { method:'PATCH', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body: JSON.stringify({ firmware_version: newFirmware.trim() }) });
+      const d = await res.json();
+      if (res.ok) { setFirmwareVersion(d.firmware_version); setNewFirmware(''); setFirmwareMsg(d.message); }
+      else setFirmwareMsg(d.error);
+    };
+
     const isOutOfRange = sensorData && (
       (device.min_temperature != null && parseFloat(sensorData.temperature) < device.min_temperature) ||
       (device.max_temperature != null && parseFloat(sensorData.temperature) > device.max_temperature) ||
@@ -1015,8 +1248,61 @@
           <button className="btn btn-success" onClick={handleGenerate} disabled={loading}>{loading?'Generating...':'Generate Data'}</button>
           <button className="btn btn-inline" onClick={() => setShowEditModal(true)}>✏️ Edit</button>
           <button className="btn btn-inline" onClick={() => setShowHistory(!showHistory)}>{showHistory ? '📋 Hide Data' : '📋 View Data'}</button>
+          <button className="btn btn-inline" onClick={handleShowRules}>🔔 Rules</button>
+          <button className="btn btn-inline" onClick={() => { setShowFirmware(!showFirmware); setFirmwareMsg(''); }}>⚙️ Firmware</button>
           <button className="btn btn-danger" onClick={() => onDelete(device.id)}>Delete</button>
         </div>
+
+        {/* FIRMWARE SECTION (US23) */}
+        {showFirmware && (
+          <div style={{marginTop:'12px',padding:'12px',background:'#f8f9fa',borderRadius:'8px',borderTop:'1px solid #eee'}}>
+            <strong style={{fontSize:'13px',color:'#555'}}>⚙️ Firmware</strong>
+            <div className="firmware-row">
+              <span style={{color:'#666'}}>Current version:</span>
+              <span className="firmware-badge">{firmwareVersion}</span>
+            </div>
+            {firmwareMsg && <div style={{fontSize:'12px',color:'#28a745',margin:'6px 0'}}>{firmwareMsg}</div>}
+            <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
+              <input type="text" placeholder="e.g. 2.1.0" value={newFirmware} onChange={e=>setNewFirmware(e.target.value)} style={{flex:1,padding:'7px 10px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'13px'}} />
+              <button className="btn btn-success" style={{width:'auto',padding:'7px 14px',fontSize:'13px'}} onClick={handleFirmwareUpdate}>Update</button>
+            </div>
+          </div>
+        )}
+
+        {/* ALERT RULES SECTION (US18) */}
+        {showRules && (
+          <div className="alert-rules-section">
+            <strong style={{fontSize:'13px',color:'#555'}}>🔔 Custom Alert Rules</strong>
+            {ruleMsg && <div style={{fontSize:'12px',color:'#28a745',margin:'6px 0'}}>{ruleMsg}</div>}
+            {rules.length === 0 && <p style={{fontSize:'12px',color:'#aaa',margin:'6px 0'}}>No rules yet.</p>}
+            {rules.map(r => (
+              <div key={r.id} className={`rule-row ${r.enabled?'':'disabled-rule'}`}>
+                <div>
+                  <strong>{r.name}</strong>
+                  <div style={{fontSize:'11px',color:'#888'}}>{r.metric} {r.operator} {r.threshold}</div>
+                </div>
+                <div style={{display:'flex',gap:'5px'}}>
+                  <button className={`sa-btn ${r.enabled?'sa-btn-warning':'sa-btn-success'}`} onClick={()=>handleToggleRule(r.id,r.enabled)}>{r.enabled?'Pause':'Resume'}</button>
+                  <button className="sa-btn sa-btn-danger" onClick={()=>handleDeleteRule(r.id)}>×</button>
+                </div>
+              </div>
+            ))}
+            <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr',gap:'6px',marginTop:'8px'}}>
+              <input type="text" placeholder="Rule name" value={ruleForm.name} onChange={e=>setRuleForm({...ruleForm,name:e.target.value})} style={{padding:'6px 8px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'12px',gridColumn:'1/-1'}} />
+              <select value={ruleForm.metric} onChange={e=>setRuleForm({...ruleForm,metric:e.target.value})} style={{padding:'6px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'12px'}}>
+                <option value="temperature">Temp</option>
+                <option value="humidity">Humidity</option>
+                <option value="pressure">Pressure</option>
+              </select>
+              <select value={ruleForm.operator} onChange={e=>setRuleForm({...ruleForm,operator:e.target.value})} style={{padding:'6px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'12px'}}>
+                <option value="above">Above</option>
+                <option value="below">Below</option>
+              </select>
+              <input type="number" step="0.1" placeholder="Value" value={ruleForm.threshold} onChange={e=>setRuleForm({...ruleForm,threshold:e.target.value})} style={{padding:'6px 8px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'12px'}} />
+              <button className="sa-btn sa-btn-success" style={{gridColumn:'1/-1',padding:'7px'}} onClick={handleAddRule}>＋ Add Rule</button>
+            </div>
+          </div>
+        )}
 
         {showHistory && (
           <div className="sensor-history">
@@ -1056,6 +1342,209 @@
         )}
 
         {showEditModal && <EditDeviceModal device={device} onClose={()=>setShowEditModal(false)} onSave={handleEditSave} />}
+      </div>
+    );
+  }
+
+  // ===== GROUPS TAB (US8, US9, US10) =====
+  function GroupsTab({ user }) {
+    const [groups, setGroups] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showCreate, setShowCreate] = useState(false);
+    const [newGroup, setNewGroup] = useState({ name: '', description: '' });
+    const [createMsg, setCreateMsg] = useState('');
+    const [expandedId, setExpandedId] = useState(null);
+    const [groupMembers, setGroupMembers] = useState({});
+    const [groupDevices, setGroupDevices] = useState({});
+    const [addMemberForm, setAddMemberForm] = useState({});
+    const [addDeviceForm, setAddDeviceForm] = useState({});
+    const [userDevices, setUserDevices] = useState([]);
+    const [actionMsg, setActionMsg] = useState('');
+
+    const token = () => localStorage.getItem('token');
+
+    const fetchGroups = async () => {
+      setLoading(true);
+      const res = await fetch(`${API_URL}/groups`, { headers: { Authorization: `Bearer ${token()}` } });
+      if (res.ok) setGroups(await res.json());
+      setLoading(false);
+    };
+
+    useEffect(() => {
+      fetchGroups();
+      fetch(`${API_URL}/devices`, { headers: { Authorization: `Bearer ${token()}` } })
+        .then(r => r.ok ? r.json() : []).then(d => setUserDevices(d));
+    }, []);
+
+    const toggleExpand = async (id) => {
+      if (expandedId === id) { setExpandedId(null); return; }
+      setExpandedId(id);
+      if (!groupMembers[id]) {
+        const [mr, dr] = await Promise.all([
+          fetch(`${API_URL}/groups/${id}/members`, { headers:{Authorization:`Bearer ${token()}`} }),
+          fetch(`${API_URL}/groups/${id}/devices`, { headers:{Authorization:`Bearer ${token()}`} })
+        ]);
+        if (mr.ok) { const d = await mr.json(); setGroupMembers(p => ({...p, [id]: d})); }
+        if (dr.ok) { const d = await dr.json(); setGroupDevices(p => ({...p, [id]: d})); }
+      }
+    };
+
+    const refreshGroupData = async (id) => {
+      const [mr, dr] = await Promise.all([
+        fetch(`${API_URL}/groups/${id}/members`, { headers:{Authorization:`Bearer ${token()}`} }),
+        fetch(`${API_URL}/groups/${id}/devices`, { headers:{Authorization:`Bearer ${token()}`} })
+      ]);
+      if (mr.ok) { const d = await mr.json(); setGroupMembers(p => ({...p, [id]: d})); }
+      if (dr.ok) { const d = await dr.json(); setGroupDevices(p => ({...p, [id]: d})); }
+    };
+
+    const handleCreate = async () => {
+      if (!newGroup.name.trim()) { setCreateMsg('Name required.'); return; }
+      const res = await fetch(`${API_URL}/groups`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token()}`}, body: JSON.stringify(newGroup) });
+      const d = await res.json();
+      if (res.ok) { setGroups(g => [d.group, ...g]); setNewGroup({name:'',description:''}); setShowCreate(false); setCreateMsg(''); }
+      else setCreateMsg(d.error);
+    };
+
+    const handleDeleteGroup = async (id) => {
+      if (!confirm('Delete this group?')) return;
+      const res = await fetch(`${API_URL}/groups/${id}`, { method:'DELETE', headers:{Authorization:`Bearer ${token()}`} });
+      if (res.ok) { setGroups(g => g.filter(x => x.id !== id)); if (expandedId === id) setExpandedId(null); }
+    };
+
+    const handleAddMember = async (groupId) => {
+      const form = addMemberForm[groupId] || {};
+      if (!form.identifier) { setActionMsg('Enter username or email.'); return; }
+      const res = await fetch(`${API_URL}/groups/${groupId}/members`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token()}`}, body: JSON.stringify({ identifier: form.identifier, role: form.role || 'viewer' }) });
+      const d = await res.json();
+      setActionMsg(res.ok ? d.message : d.error);
+      if (res.ok) { setAddMemberForm(p => ({...p, [groupId]: {}})); refreshGroupData(groupId); fetchGroups(); }
+    };
+
+    const handleRemoveMember = async (groupId, userId) => {
+      if (!confirm('Remove this member?')) return;
+      await fetch(`${API_URL}/groups/${groupId}/members/${userId}`, { method:'DELETE', headers:{Authorization:`Bearer ${token()}`} });
+      refreshGroupData(groupId); fetchGroups();
+    };
+
+    const handleChangeRole = async (groupId, userId, role) => {
+      await fetch(`${API_URL}/groups/${groupId}/members/${userId}`, { method:'PATCH', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token()}`}, body: JSON.stringify({ role }) });
+      refreshGroupData(groupId);
+    };
+
+    const handleAddDevice = async (groupId) => {
+      const form = addDeviceForm[groupId] || {};
+      if (!form.device_id) { setActionMsg('Select a device.'); return; }
+      const res = await fetch(`${API_URL}/groups/${groupId}/devices`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token()}`}, body: JSON.stringify({ device_id: form.device_id }) });
+      const d = await res.json();
+      setActionMsg(res.ok ? d.message : d.error);
+      if (res.ok) { setAddDeviceForm(p=>({...p,[groupId]:{}})); refreshGroupData(groupId); fetchGroups(); }
+    };
+
+    const handleRemoveDevice = async (groupId, deviceId) => {
+      await fetch(`${API_URL}/groups/${groupId}/devices/${deviceId}`, { method:'DELETE', headers:{Authorization:`Bearer ${token()}`} });
+      refreshGroupData(groupId); fetchGroups();
+    };
+
+    if (loading) return <p style={{color:'white'}}>Loading groups...</p>;
+
+    return (
+      <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px'}}>
+          <h2 style={{color:'white',fontSize:'22px'}}>📁 Sensor Groups</h2>
+          <button className="add-device-btn" onClick={()=>setShowCreate(!showCreate)}>➕ New Group</button>
+        </div>
+        {actionMsg && <div className="success-message" style={{marginBottom:'14px'}}>{actionMsg}</div>}
+        {showCreate && (
+          <div className="group-card" style={{marginBottom:'20px'}}>
+            <h3 style={{marginBottom:'12px'}}>Create Group</h3>
+            {createMsg && <div className="error-message">{createMsg}</div>}
+            <div className="form-group"><label>Group Name</label><input type="text" value={newGroup.name} onChange={e=>setNewGroup({...newGroup,name:e.target.value})} placeholder="My Sensor Group" /></div>
+            <div className="form-group"><label>Description (optional)</label><input type="text" value={newGroup.description} onChange={e=>setNewGroup({...newGroup,description:e.target.value})} placeholder="e.g. Living area sensors" /></div>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button className="btn" style={{flex:1}} onClick={handleCreate}>Create</button>
+              <button className="btn btn-grey" style={{flex:1}} onClick={()=>{setShowCreate(false);setCreateMsg('');}}>Cancel</button>
+            </div>
+          </div>
+        )}
+        {groups.length === 0
+          ? <div className="empty-state"><h3>No groups yet</h3><p>Create a group to organize sensors and share access with other users</p></div>
+          : <div className="groups-grid">
+              {groups.map(g => (
+                <div key={g.id} className="group-card">
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'start'}}>
+                    <div>
+                      <h3>{g.name} <span className={`group-badge ${g.my_role==='editor'?'editor':''}`}>{g.my_role}</span></h3>
+                      {g.description && <div className="group-meta">{g.description}</div>}
+                      <div className="group-meta">👥 {g.member_count} member{g.member_count!==1?'s':''} · 📡 {g.device_count} device{g.device_count!==1?'s':''} · by {g.owner_username}</div>
+                    </div>
+                    {g.my_role === 'owner' && <button className="sa-btn sa-btn-danger" onClick={()=>handleDeleteGroup(g.id)}>Delete</button>}
+                  </div>
+                  <button className="btn btn-grey" style={{width:'100%',marginTop:'10px',fontSize:'13px',padding:'7px'}} onClick={()=>toggleExpand(g.id)}>
+                    {expandedId===g.id ? '▲ Collapse' : '▼ Manage'}
+                  </button>
+                  {expandedId===g.id && (
+                    <div style={{marginTop:'12px'}}>
+                      {/* Members */}
+                      <div style={{marginBottom:'12px'}}>
+                        <strong style={{fontSize:'13px',color:'#555'}}>Members</strong>
+                        <div className="member-list" style={{marginTop:'6px'}}>
+                          {(groupMembers[g.id]||[]).map(m => (
+                            <div key={m.user_id} className="member-row">
+                              <span>{m.username} <span style={{color:'#aaa',fontSize:'11px'}}>({m.email||m.phone||'—'})</span></span>
+                              <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                                {g.my_role==='owner'
+                                  ? <select className="role-select" value={m.role} onChange={e=>handleChangeRole(g.id,m.user_id,e.target.value)}>
+                                      <option value="viewer">Viewer</option>
+                                      <option value="editor">Editor</option>
+                                    </select>
+                                  : <span className={`group-badge ${m.role==='editor'?'editor':''}`}>{m.role}</span>
+                                }
+                                {(g.my_role==='owner' || m.user_id===user.id) && <button className="sa-btn sa-btn-danger" onClick={()=>handleRemoveMember(g.id,m.user_id)}>×</button>}
+                              </div>
+                            </div>
+                          ))}
+                          {(groupMembers[g.id]||[]).length===0 && <p style={{color:'#aaa',fontSize:'12px',margin:'4px 0'}}>No members yet.</p>}
+                        </div>
+                        {g.my_role==='owner' && (
+                          <div style={{display:'flex',gap:'6px',marginTop:'8px'}}>
+                            <input type="text" placeholder="Username or email" value={(addMemberForm[g.id]||{}).identifier||''} onChange={e=>setAddMemberForm(p=>({...p,[g.id]:{...(p[g.id]||{}),identifier:e.target.value}}))} style={{flex:1,padding:'6px 8px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'12px'}} />
+                            <select value={(addMemberForm[g.id]||{}).role||'viewer'} onChange={e=>setAddMemberForm(p=>({...p,[g.id]:{...(p[g.id]||{}),role:e.target.value}}))} className="role-select">
+                              <option value="viewer">Viewer</option>
+                              <option value="editor">Editor</option>
+                            </select>
+                            <button className="sa-btn sa-btn-success" onClick={()=>handleAddMember(g.id)}>Add</button>
+                          </div>
+                        )}
+                      </div>
+                      {/* Devices */}
+                      <div>
+                        <strong style={{fontSize:'13px',color:'#555'}}>Sensors in Group</strong>
+                        <div style={{marginTop:'6px'}}>
+                          {(groupDevices[g.id]||[]).map(d => (
+                            <div key={d.device_id} className="member-row">
+                              <span>{d.device_name} <span style={{color:'#aaa',fontSize:'11px'}}>({d.device_id})</span></span>
+                              {g.my_role==='owner' && <button className="sa-btn sa-btn-danger" onClick={()=>handleRemoveDevice(g.id,d.device_id)}>×</button>}
+                            </div>
+                          ))}
+                          {(groupDevices[g.id]||[]).length===0 && <p style={{color:'#aaa',fontSize:'12px',margin:'4px 0'}}>No sensors added yet.</p>}
+                        </div>
+                        {g.my_role==='owner' && (
+                          <div style={{display:'flex',gap:'6px',marginTop:'8px'}}>
+                            <select value={(addDeviceForm[g.id]||{}).device_id||''} onChange={e=>setAddDeviceForm(p=>({...p,[g.id]:{device_id:e.target.value}}))} style={{flex:1,padding:'6px 8px',border:'1px solid #ddd',borderRadius:'5px',fontSize:'12px'}}>
+                              <option value="">Select a device...</option>
+                              {userDevices.map(d=><option key={d.device_id} value={d.device_id}>{d.device_name} ({d.device_id})</option>)}
+                            </select>
+                            <button className="sa-btn sa-btn-success" onClick={()=>handleAddDevice(g.id)}>Add</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+        }
       </div>
     );
   }
@@ -1180,6 +1669,7 @@
         <div className="dashboard">
           <div className="tab-bar">
             <button className={`tab-btn ${activeTab==='devices'?'active':''}`} onClick={()=>setActiveTab('devices')}>📡 My Devices</button>
+            <button className={`tab-btn ${activeTab==='groups'?'active':''}`} onClick={()=>setActiveTab('groups')}>📁 Groups</button>
             {user.is_admin===1 && <button className={`tab-btn admin-tab ${activeTab==='admin'?'active':''}`} onClick={()=>setActiveTab('admin')}>🛠 Admin Panel</button>}
           </div>
 
@@ -1196,6 +1686,9 @@
               }
             </>
           )}
+
+          {/* GROUPS TAB */}
+          {activeTab==='groups' && <GroupsTab user={user} />}
 
           {/* ADMIN TAB */}
           {activeTab==='admin' && user.is_admin===1 && (
