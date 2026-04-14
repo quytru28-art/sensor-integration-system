@@ -92,10 +92,20 @@ const logAdminAction = (adminId, action, targetUserId, details, ipAddress) => {
   );
 };
 
+// Returns the best notification email for a user:
+// notification_email (if set) → registered email → fallback to GMAIL_USER
+const getNotificationEmail = (userId, callback) => {
+  db.get('SELECT email, notification_email FROM users WHERE id = ?', [userId], (err, u) => {
+    if (err || !u) return callback(process.env.GMAIL_USER || null);
+    const addr = u.notification_email || toClientEmail(u.email) || process.env.GMAIL_USER || null;
+    callback(addr);
+  });
+};
+
 const sendFailedLoginEmail = async (user, req, reason) => {
   db.get('SELECT alert_on_failed_login FROM users WHERE id = ?', [user.id], async (err, u) => {
     if (err || !u || u.alert_on_failed_login === 0 || !process.env.GMAIL_USER) return;
-    const recipient = toClientEmail(user.email) || process.env.GMAIL_USER;
+    const recipient = u.notification_email || toClientEmail(user.email) || process.env.GMAIL_USER;
     try {
       await mailer.sendMail({
         from: `"Sensor System" <${process.env.GMAIL_USER}>`,
@@ -267,7 +277,7 @@ app.post('/api/auth/login', (req, res) => {
 
 // Get current user
 app.get('/api/auth/me', authenticateToken, (req, res) => {
-  db.get('SELECT id, username, email, phone, is_admin, must_change_password, retention_days, alert_on_failed_login FROM users WHERE id = ?', [req.user.id], (err, user) => {
+  db.get('SELECT id, username, email, phone, is_admin, must_change_password, retention_days, alert_on_failed_login, notification_email FROM users WHERE id = ?', [req.user.id], (err, user) => {
     if (err) return res.status(500).json({ error: 'Server error' });
     res.json({ ...user, email: toClientEmail(user.email), retention_days: user.retention_days ?? 365, alert_on_failed_login: user.alert_on_failed_login ?? 1 });
   });
@@ -350,7 +360,7 @@ app.post('/api/account/change-password', authenticateToken, async (req, res) => 
 
 // ========== UPDATE ACCOUNT (email, phone, retention, alert) ==========
 app.patch('/api/account', authenticateToken, (req, res) => {
-  const { email, phone, retention_days, alert_on_failed_login } = req.body;
+  const { email, phone, retention_days, alert_on_failed_login, notification_email } = req.body;
   const updates = [];
   const params = [];
 
@@ -375,6 +385,11 @@ app.patch('/api/account', authenticateToken, (req, res) => {
   if (alert_on_failed_login !== undefined) {
     updates.push('alert_on_failed_login = ?');
     params.push(alert_on_failed_login ? 1 : 0);
+  }
+  if (notification_email !== undefined) {
+    if (notification_email && !String(notification_email).includes('@')) return res.status(400).json({ error: 'Notification email must be a valid email' });
+    updates.push('notification_email = ?');
+    params.push(notification_email ? normalizeEmail(notification_email) : null);
   }
   if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
@@ -549,7 +564,7 @@ app.get('/api/sensor-data/:deviceId/export', authenticateToken, (req, res) => {
 
 const sendThresholdAlertEmail = async (device, user, reading, breaches) => {
   if (!process.env.GMAIL_USER) return;
-  const recipient = toClientEmail(user.email) || process.env.GMAIL_USER;
+  const recipient = user.notification_email || toClientEmail(user.email) || process.env.GMAIL_USER;
   try {
     await mailer.sendMail({
       from: `"Sensor System" <${process.env.GMAIL_USER}>`,
@@ -582,7 +597,7 @@ app.post('/api/demo/generate-data/:deviceId', authenticateToken, (req, res) => {
       if (device.min_pressure != null && pressure < device.min_pressure) breaches.push(`Pressure ${pressure} < min ${device.min_pressure}`);
       if (device.max_pressure != null && pressure > device.max_pressure) breaches.push(`Pressure ${pressure} > max ${device.max_pressure}`);
       if (breaches.length > 0) {
-        db.get('SELECT email FROM users WHERE id = ?', [req.user.id], (e, u) => {
+        db.get('SELECT email, notification_email FROM users WHERE id = ?', [req.user.id], (e, u) => {
           sendThresholdAlertEmail(device, u || { email: device.email }, { temp: temperature, humidity, pressure }, breaches);
         });
       }
@@ -597,7 +612,7 @@ app.post('/api/demo/generate-data/:deviceId', authenticateToken, (req, res) => {
           return r.operator === 'above' ? val > r.threshold : val < r.threshold;
         });
         if (ruleBreaches.length > 0) {
-          db.get('SELECT email FROM users WHERE id = ?', [req.user.id], (e, u) => {
+          db.get('SELECT email, notification_email FROM users WHERE id = ?', [req.user.id], (e, u) => {
             const msgs = ruleBreaches.map(r => `"${r.name}": ${r.metric} ${r.operator} ${r.threshold} (got ${reading[r.metric]})`);
             sendThresholdAlertEmail(device, u || { email: device.email }, { temp: temperature, humidity, pressure }, msgs);
           });
@@ -744,7 +759,7 @@ app.get('/api/admin/activity-logs', authenticateToken, requireAdmin, (req, res) 
 
 const sendMfaEmail = async (user, code) => {
   if (!process.env.GMAIL_USER) return;
-  const recipient = toClientEmail(user.email) || process.env.GMAIL_USER;
+  const recipient = user.notification_email || toClientEmail(user.email) || process.env.GMAIL_USER;
   try {
     await mailer.sendMail({
       from: `"Sensor System" <${process.env.GMAIL_USER}>`,
@@ -765,6 +780,7 @@ app.post('/api/auth/mfa/enable', authenticateToken, async (req, res) => {
   const { code } = req.body;
   db.get('SELECT * FROM users WHERE id = ?', [req.user.id], async (err, user) => {
     if (err || !user) return res.status(404).json({ error: 'User not found' });
+    user.notification_email = user.notification_email || null;
 
     if (!code) {
       // Step 1: send OTP
@@ -1193,7 +1209,7 @@ function runRetentionJob() {
 async function runExportSchedules() {
   if (!process.env.GMAIL_USER) return;
   const now = new Date().toISOString();
-  db.all(`SELECT es.*, u.email, u.username FROM export_schedules es
+  db.all(`SELECT es.*, u.email, u.notification_email, u.username FROM export_schedules es
     JOIN users u ON es.user_id = u.id
     WHERE es.enabled = 1 AND es.next_run IS NOT NULL AND datetime(es.next_run) <= datetime(?)`, [now], (err, schedules) => {
     if (err || !schedules || schedules.length === 0) return;
@@ -1210,7 +1226,7 @@ async function runExportSchedules() {
           filename = `export-${deviceLabel}-${new Date().toISOString().slice(0,10)}.json`;
           mimeType = 'application/json';
         }
-        const recipient = (sched.email && !sched.email.endsWith('@local.invalid')) ? sched.email : process.env.GMAIL_USER;
+        const recipient = sched.notification_email || toClientEmail(sched.email) || process.env.GMAIL_USER;
         mailer.sendMail({
           from: `"Sensor System" <${process.env.GMAIL_USER}>`,
           to: recipient,

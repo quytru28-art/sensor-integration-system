@@ -618,6 +618,7 @@
     const [editPhone, setEditPhone] = useState('');
     const [retentionDays, setRetentionDays] = useState(365);
     const [alertOnFailedLogin, setAlertOnFailedLogin] = useState(true);
+    const [notificationEmail, setNotificationEmail] = useState('');
     const [accountError, setAccountError] = useState('');
     const [accountSuccess, setAccountSuccess] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -639,7 +640,7 @@
     useEffect(() => {
       const token = localStorage.getItem('token');
       fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.ok ? r.json() : null).then(u => { if (u) { setFullUser(u); setEditEmail(u.email||''); setEditPhone(u.phone||''); setRetentionDays(u.retention_days??365); setAlertOnFailedLogin(u.alert_on_failed_login!==0); } });
+        .then(r => r.ok ? r.json() : null).then(u => { if (u) { setFullUser(u); setEditEmail(u.email||''); setEditPhone(u.phone||''); setRetentionDays(u.retention_days??365); setAlertOnFailedLogin(u.alert_on_failed_login!==0); setNotificationEmail(u.notification_email||''); } });
       fetch(`${API_URL}/auth/mfa/status`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
         .then(r => r.ok ? r.json() : null).then(d => { if (d) setMfaEnabled(d.mfa_enabled); });
       fetch(`${API_URL}/export-schedules`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
@@ -689,7 +690,7 @@
     const handleAccountUpdate = async () => {
       setAccountError(''); setAccountSuccess('');
       const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/account`, { method:'PATCH', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({ email: editEmail||undefined, phone: editPhone||undefined, retention_days: retentionDays, alert_on_failed_login: alertOnFailedLogin }) });
+      const res = await fetch(`${API_URL}/account`, { method:'PATCH', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({ email: editEmail||undefined, phone: editPhone||undefined, retention_days: retentionDays, alert_on_failed_login: alertOnFailedLogin, notification_email: notificationEmail||null }) });
       const data = await res.json();
       if (res.ok) { setAccountSuccess(data.message || 'Account updated successfully.'); } else setAccountError(data.error||'Update failed');
     };
@@ -718,6 +719,12 @@
             {accountError && <div className="error-message">{accountError}</div>}
             {accountSuccess && <div className="success-message">{accountSuccess}</div>}
             <div className="form-group"><label>Email</label><input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} placeholder="you@example.com" /></div>
+            <div className="form-group">
+              <label>Notification Email <span style={{fontWeight:400,color:'#888',fontSize:'12px'}}>(where alerts, MFA codes & exports are sent)</span></label>
+              <input type="email" value={notificationEmail} onChange={e=>setNotificationEmail(e.target.value)} placeholder={editEmail || 'Same as login email'} />
+              {!notificationEmail && editEmail && <div style={{fontSize:'11px',color:'#888',marginTop:'3px'}}>Currently using: <strong>{editEmail}</strong></div>}
+              {notificationEmail && <div style={{fontSize:'11px',color:'#667eea',marginTop:'3px'}}>Notifications → <strong>{notificationEmail}</strong></div>}
+            </div>
             <div className="form-group"><label>Phone (10 digits)</label><input type="text" value={editPhone} onChange={e=>setEditPhone(e.target.value.replace(/\D/g,'').slice(0,10))} placeholder="1234567890" /></div>
             <div className="form-group"><label>Data retention (days)</label><input type="number" min="1" max="3650" value={retentionDays} onChange={e=>setRetentionDays(parseInt(e.target.value)||365)} /></div>
             <div className="form-group"><label><input type="checkbox" checked={alertOnFailedLogin} onChange={e=>setAlertOnFailedLogin(e.target.checked)} /> Email me on failed login attempts</label></div>

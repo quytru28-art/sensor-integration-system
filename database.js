@@ -162,6 +162,10 @@ db.serialize(() => {
     if (err && !err.message.includes("duplicate column")) console.error(err.message);
   });
 
+  db.run(`ALTER TABLE users ADD COLUMN notification_email TEXT`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+
   /* ================= DEVICES TABLE ================= */
 
   db.run(`
