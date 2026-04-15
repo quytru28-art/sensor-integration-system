@@ -1010,7 +1010,7 @@
           {error && <div className="error-message">{error}</div>}
           <form onSubmit={handleSubmit}>
             <div className="form-group"><label>Device Name</label><input type="text" value={formData.device_name} onChange={e=>setFormData({...formData,device_name:e.target.value})} placeholder="Living Room Sensor" required /></div>
-            <div className="form-group"><label>Device Type</label><select value={formData.device_type} onChange={e=>setFormData({...formData,device_type:e.target.value})}><option>Temperature</option><option>Humidity</option><option>Environmental</option><option>Motion</option><option>Light</option></select></div>
+            <div className="form-group"><label>Device Type</label><select value={formData.device_type} onChange={e=>setFormData({...formData,device_type:e.target.value})}><option>Temperature</option><option>Humidity</option><option>Environmental</option><option>Motion</option><option>Light</option><option>Camera</option></select></div>
             <div className="form-group">
               <label>Device ID</label>
               <div className="inline-row">
@@ -1121,6 +1121,12 @@
     const [firmwareVersion, setFirmwareVersion] = useState(device.firmware_version || '1.0.0');
     const [newFirmware, setNewFirmware] = useState('');
     const [firmwareMsg, setFirmwareMsg] = useState('');
+    // Camera support
+    const videoRef = useRef(null);
+    const [cameraStream, setCameraStream] = useState(null);
+    const [isCapturing, setIsCapturing] = useState(false);
+    const [latestImage, setLatestImage] = useState(null);
+    const [cameraMsg, setCameraMsg] = useState('');
 
     const fetchData = async () => {
       try {
@@ -1145,6 +1151,157 @@
 
     useEffect(() => { fetchData(); const t = setInterval(fetchData, 10000); return () => clearInterval(t); }, [device.device_id]);
     useEffect(() => { if (showHistory) fetchHistory(); }, [showHistory, device.device_id]);
+
+    // Camera initialization and cleanup
+    useEffect(() => {
+      if (device.device_type !== 'Camera') return;
+      
+      const initCamera = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false
+          });
+          setCameraStream(stream);
+          
+          // Set up video element 
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.muted = true;
+            
+            // Force play
+            const playPromise = videoRef.current.play();
+            if (playPromise !== undefined) {
+              playPromise.catch(e => console.error('Auto-play failed:', e.message));
+            }
+          }
+          
+          setCameraMsg('✅ Camera ready');
+          setTimeout(() => setCameraMsg(''), 2000);
+          fetchLatestCameraImage();
+        } catch (err) {
+          if (err.name === 'NotAllowedError') {
+            setCameraMsg('❌ Permission denied. Enable camera in browser settings.');
+          } else if (err.name === 'NotFoundError') {
+            setCameraMsg('❌ No camera found on this device.');
+          } else if (err.name === 'NotReadableError') {
+            setCameraMsg('❌ Camera is in use by another app. Close it and refresh.');
+          } else {
+            setCameraMsg(`❌ Camera error: ${err.message}`);
+          }
+        }
+      };
+
+      initCamera();
+      const refreshInterval = setInterval(fetchLatestCameraImage, 30000);
+
+      return () => {
+        clearInterval(refreshInterval);
+        if (cameraStream) cameraStream.getTracks().forEach(t => t.stop());
+      };
+    }, [device.device_id, device.device_type]);
+
+    const fetchLatestCameraImage = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_URL}/sensor-data/${device.device_id}/latest-image`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.image_url) setLatestImage(data.image_url);
+        }
+      } catch (err) {
+        console.error('Error fetching camera image:', err);
+      }
+    };
+
+    const captureFrame = async () => {
+      setIsCapturing(true);
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          setCameraMsg('❌ No auth token');
+          setIsCapturing(false);
+          return;
+        }
+
+        if (!cameraStream) {
+          setCameraMsg('❌ Camera stream not available');
+          setIsCapturing(false);
+          return;
+        }
+
+        // Get video track and capture using ImageCapture API
+        const videoTrack = cameraStream.getVideoTracks()[0];
+        if (!videoTrack) {
+          setCameraMsg('❌ No video track');
+          setIsCapturing(false);
+          return;
+        }
+
+        const imageCapture = new ImageCapture(videoTrack);
+        let bitmap;
+        
+        try {
+          bitmap = await imageCapture.grabFrame();
+        } catch (e) {
+          // Fallback to canvas if ImageCapture not available
+          if (!videoRef.current || !videoRef.current.videoWidth) {
+            setCameraMsg('❌ Video element not ready, cannot capture');
+            setIsCapturing(false);
+            return;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = videoRef.current.videoWidth;
+          canvas.height = videoRef.current.videoHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(videoRef.current, 0, 0);
+          bitmap = canvas;
+        }
+
+        // Convert bitmap/canvas to blob
+        const canvas2 = document.createElement('canvas');
+        canvas2.width = bitmap.width;
+        canvas2.height = bitmap.height;
+        const ctx2 = canvas2.getContext('2d');
+        if (bitmap instanceof OffscreenCanvas || bitmap instanceof HTMLCanvasElement) {
+          ctx2.drawImage(bitmap, 0, 0);
+        } else {
+          ctx2.drawImage(bitmap, 0, 0);
+        }
+        
+        const imageData64 = canvas2.toDataURL('image/jpeg', 0.8).split(',')[1];
+
+        const res = await fetch(`${API_URL}/sensor-data/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            device_id: device.device_id,
+            image_data: imageData64,
+            metadata: { 
+              timestamp: new Date().toISOString(), 
+              resolution: `${canvas2.width}x${canvas2.height}`, 
+              quality: 80 
+            }
+          })
+        });
+
+        if (res.ok) {
+          setLatestImage(`data:image/jpeg;base64,${imageData64}`);
+          const result = await res.json();
+          setCameraMsg('✅ Frame captured!');
+          setTimeout(() => setCameraMsg(''), 3000);
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          setCameraMsg(`Upload failed: ${res.status} ${errData.error || res.statusText}`);
+        }
+      } catch (err) {
+        setCameraMsg('Capture failed: ' + err.message);
+      } finally {
+        setIsCapturing(false);
+      }
+    };
 
     const handleGenerate = async () => {
       setLoading(true);
@@ -1243,6 +1400,28 @@
           <div className="device-info"><h3>{device.device_name}</h3><div className="device-type">{device.device_type} • {device.device_id} {device.collection_interval_minutes ? `• ${device.collection_interval_minutes}min` : ''}</div></div>
           <span className={`device-status ${device.status==='offline'?'offline':''}`}>{device.status}</span>
         </div>
+
+        {/* CAMERA WIDGET */}
+        {device.device_type === 'Camera' && (
+          <div style={{marginTop:'15px',paddingTop:'15px',borderTop:'1px solid #eee'}}>
+            <h4 style={{marginBottom:'10px',color:'#333',fontSize:'14px',fontWeight:'600'}}>📷 Camera Feed</h4>
+            <div style={{background:'#000',borderRadius:'8px',overflow:'hidden',marginBottom:'12px',position:'relative',aspectRatio:'16/9',minHeight:'200px'}}>
+              {latestImage ? (
+                <img src={latestImage} style={{width:'100%',height:'100%',display:'block',objectFit:'cover'}} alt="Latest frame" />
+              ) : cameraStream ? (
+                <video ref={videoRef} autoPlay={true} playsInline={true} muted={true} style={{width:'100%',height:'100%',display:'block',objectFit:'cover',background:'#000'}} />
+              ) : (
+                <div style={{width:'100%',height:'100%',background:'#333',display:'flex',alignItems:'center',justifyContent:'center',color:'#999'}}>{cameraMsg || 'Loading camera...'}</div>
+              )}
+            </div>
+            {(cameraMsg) && <div style={{fontSize:'12px',color:'#28a745',marginBottom:'8px',padding:'8px',background:'#f0f8f0',borderRadius:'4px'}}>{cameraMsg}</div>}
+            <div style={{display:'flex',gap:'8px'}}>
+              <button className="btn btn-success" style={{flex:1}} onClick={captureFrame} disabled={isCapturing || !cameraStream}>{isCapturing?'Capturing...':'📸 Capture & Upload'}</button>
+              <button className="btn btn-grey" style={{flex:1}} onClick={fetchLatestCameraImage}>🔄 Refresh</button>
+            </div>
+          </div>
+        )}
+
         {sensorData && (
           <div className="sensor-readings">
             <div className="reading"><span className="reading-label">🌡️ Temperature</span><span className="reading-value">{sensorData.temperature}°C {isOutOfRange && <span className="out-of-range">⚠ Out of range</span>}</span></div>
@@ -1252,10 +1431,10 @@
           </div>
         )}
         <div className="device-actions">
-          <button className="btn btn-success" onClick={handleGenerate} disabled={loading}>{loading?'Generating...':'Generate Data'}</button>
+          {device.device_type !== 'Camera' && <button className="btn btn-success" onClick={handleGenerate} disabled={loading}>{loading?'Generating...':'Generate Data'}</button>}
           <button className="btn btn-inline" onClick={() => setShowEditModal(true)}>✏️ Edit</button>
-          <button className="btn btn-inline" onClick={() => setShowHistory(!showHistory)}>{showHistory ? '📋 Hide Data' : '📋 View Data'}</button>
-          <button className="btn btn-inline" onClick={handleShowRules}>🔔 Rules</button>
+          {device.device_type !== 'Camera' && <button className="btn btn-inline" onClick={() => setShowHistory(!showHistory)}>{showHistory ? '📋 Hide Data' : '📋 View Data'}</button>}
+          {device.device_type !== 'Camera' && <button className="btn btn-inline" onClick={handleShowRules}>🔔 Rules</button>}
           <button className="btn btn-inline" onClick={() => { setShowFirmware(!showFirmware); setFirmwareMsg(''); }}>⚙️ Firmware</button>
           <button className="btn btn-danger" onClick={() => onDelete(device.id)}>Delete</button>
         </div>
@@ -1575,6 +1754,16 @@
       alert(`Logged out after ${inactivityTimeout} minute(s) of inactivity.`);
       onLogout();
     });
+
+    // Request camera permissions on dashboard load
+    useEffect(() => {
+      navigator.mediaDevices.enumerateDevices().then(devices => {
+        const hasCamera = devices.some(d => d.kind === 'videoinput');
+        if (hasCamera && navigator.permissions) {
+          navigator.permissions.query({ name: 'camera' }).catch(() => {});
+        }
+      }).catch(() => {});
+    }, []);
 
     useEffect(() => { fetchDevices(); }, []);
     useEffect(() => { if (activeTab === 'admin') fetchAdminData(); }, [activeTab]);

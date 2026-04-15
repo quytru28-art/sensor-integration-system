@@ -1,0 +1,38 @@
+[Unit]
+Description=Camera Sensor Integration Service
+Documentation=https://github.com/your-repo/sensor-integration-system
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=video
+WorkingDirectory=/opt/camera_sensor
+
+# Path to the Python script
+ExecStart=/usr/bin/python3 /opt/camera_sensor/camera_device_capture.py
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=camera_sensor
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Resource limits
+MemoryLimit=256M
+CPUQuota=50%
+
+# Environment variables (if needed)
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target
