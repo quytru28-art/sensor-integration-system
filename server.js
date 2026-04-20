@@ -44,7 +44,7 @@ const MAX_ATTEMPTS = 5;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
 // ========== AUTHENTICATION MIDDLEWARE ==========
@@ -1261,6 +1261,99 @@ runExportSchedules();
 setInterval(runCleanupJob, 24 * 60 * 60 * 1000);
 setInterval(runRetentionJob, 24 * 60 * 60 * 1000);
 setInterval(runExportSchedules, 60 * 60 * 1000); // hourly check
+
+// ========== CAMERA/SENSOR DATA ENDPOINTS ==========
+
+// Serve uploaded images
+const path = require('path');
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+
+// POST: Submit sensor/camera data
+app.post('/api/sensor-data/submit', authenticateToken, async (req, res) => {
+  try {
+    const { device_id, image_data, image_url, metadata } = req.body;
+    if (!device_id) return res.status(400).json({ error: 'device_id required' });
+    if (!image_data && !image_url) return res.status(400).json({ error: 'image_data or image_url required' });
+
+    db.get('SELECT * FROM devices WHERE device_id = ? AND user_id = ?', [device_id, req.user.id], (err, device) => {
+      if (err || !device) return res.status(403).json({ error: 'Device not found or access denied' });
+
+      let metadataStr = '{}';
+      if (metadata && typeof metadata === 'object') metadataStr = JSON.stringify(metadata);
+
+      let imagePath = null;
+      if (image_data) {
+        try {
+          const fs = require('fs');
+          const uploadDir = path.join(__dirname, 'public', 'uploads', `device_${device_id}`);
+          if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+          const imageName = `${Date.now()}.jpg`;
+          const fullImagePath = path.join(uploadDir, imageName);
+          const imageBuffer = Buffer.from(image_data, 'base64');
+          fs.writeFileSync(fullImagePath, imageBuffer);
+          imagePath = `/uploads/device_${device_id}/${imageName}`;
+        } catch (err) {
+          console.error('Error saving image:', err);
+          return res.status(500).json({ error: 'Failed to save image' });
+        }
+      }
+
+      db.run(
+        'INSERT INTO sensor_data (device_id, image_url, image_data, metadata, timestamp) VALUES (?, ?, ?, ?, datetime(\'now\'))',
+        [device_id, image_url || imagePath, image_data ? 'stored' : null, metadataStr],
+        function(insErr) {
+          if (insErr) return res.status(500).json({ error: 'Failed to store data' });
+          db.run('UPDATE devices SET last_seen_at = datetime(?), status = ? WHERE device_id = ?', 
+            [new Date().toISOString(), 'online', device_id]);
+          res.json({ success: true, message: 'Data recorded', data_id: this.lastID, image_url: imagePath || image_url });
+        }
+      );
+    });
+  } catch (err) {
+    console.error('Sensor data submit error:', err);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// GET: Latest camera image
+app.get('/api/sensor-data/:deviceId/latest-image', authenticateToken, (req, res) => {
+  const { deviceId } = req.params;
+  db.get('SELECT * FROM devices WHERE device_id = ? AND user_id = ?', [deviceId, req.user.id], (err, device) => {
+    if (err || !device) return res.status(404).json({ error: 'Device not found' });
+    db.get('SELECT image_url, metadata, timestamp FROM sensor_data WHERE device_id = ? ORDER BY timestamp DESC LIMIT 1', 
+      [deviceId], (err, data) => {
+        if (err || !data) return res.status(404).json({ error: 'No images found' });
+        res.json({
+          image_url: data.image_url,
+          timestamp: data.timestamp,
+          metadata: data.metadata ? JSON.parse(data.metadata) : {}
+        });
+      });
+  });
+});
+
+// GET: Image history/gallery
+app.get('/api/sensor-data/:deviceId/image-history', authenticateToken, (req, res) => {
+  const { deviceId } = req.params;
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = parseInt(req.query.offset) || 0;
+  
+  db.get('SELECT * FROM devices WHERE device_id = ? AND user_id = ?', [deviceId, req.user.id], (err, device) => {
+    if (err || !device) return res.status(404).json({ error: 'Device not found' });
+    db.all('SELECT id, image_url, timestamp, metadata FROM sensor_data WHERE device_id = ? AND image_url IS NOT NULL ORDER BY timestamp DESC LIMIT ? OFFSET ?',
+      [deviceId, limit, offset], (err, images) => {
+        if (err) return res.status(500).json({ error: 'Error fetching images' });
+        res.json({
+          images: (images || []).map(img => ({
+            id: img.id,
+            url: img.image_url,
+            timestamp: img.timestamp,
+            metadata: img.metadata ? JSON.parse(img.metadata) : {}
+          }))
+        });
+      });
+  });
+});
 
 // ========== START ==========
 

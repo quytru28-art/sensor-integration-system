@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Camera Feed - Sensor Integration System</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 15px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 30px;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 24px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.3s;
+    }
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+    .btn-primary:hover { background: #5568d3; }
+    .btn-success {
+      background: #28a745;
+      color: white;
+    }
+    .btn-success:hover { background: #218838; }
+    .btn-danger {
+      background: #dc3545;
+      color: white;
+    }
+    .btn-danger:hover { background: #c82333; }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .config-section {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border-left: 4px solid #667eea;
+    }
+    .config-section h3 {
+      color: #333;
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+    .config-group {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .form-group label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .form-group input, .form-group select {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+    }
+
+    .preview-section {
+      margin-bottom: 30px;
+    }
+    .preview-section h3 {
+      color: #333;
+      margin-bottom: 12px;
+      font-size: 16px;
+    }
+    #videoContainer {
+      position: relative;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      max-width: 100%;
+      margin-bottom: 15px;
+    }
+    #video {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    #canvas {
+      display: none;
+    }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .status-bar {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      color: #555;
+    }
+    .status-label { font-weight: 600; }
+    .status-value {
+      font-family: monospace;
+      color: #667eea;
+    }
+    .status-value.success { color: #28a745; }
+    .status-value.error { color: #dc3545; }
+    .status-value.pending { color: #ffc107; }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .gallery-item {
+      aspect-ratio: 16/9;
+      background: #f0f0f0;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .gallery-item:hover { transform: scale(1.05); }
+    .gallery-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .gallery-item-timestamp {
+      padding: 5px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .alert {
+      padding: 12px 15px;
+      border-radius: 6px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+    .alert-info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border-left: 4px solid #17a2b8;
+    }
+    .alert-success {
+      background: #d4edda;
+      color: #155724;
+      border-left: 4px solid #28a745;
+    }
+    .alert-error {
+      background: #f8d7da;
+      color: #721c24;
+      border-left: 4px solid #dc3545;
+    }
+
+    .log-section {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+    }
+    .log-item {
+      padding: 5px 0;
+      font-size: 12px;
+      color: #555;
+      font-family: monospace;
+      border-bottom: 1px solid #eee;
+    }
+    .log-item:last-child { border-bottom: none; }
+    .log-item.success { color: #28a745; }
+    .log-item.error { color: #dc3545; }
+    .log-item.info { color: #667eea; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>📷 Camera Sensor Feed</h1>
+  <p class="subtitle">Capture and upload camera frames to your Sensor Integration System</p>
+
+  <!-- Status Messages -->
+  <div id="messageContainer"></div>
+
+  <!-- Configuration Section -->
+  <div class="config-section">
+    <h3>Configuration</h3>
+    <div class="config-group">
+      <div class="form-group">
+        <label>Server URL</label>
+        <input type="text" id="serverUrl" value="http://localhost:3001" />
+      </div>
+      <div class="form-group">
+        <label>JWT Token</label>
+        <input type="password" id="token" placeholder="Paste your JWT token here" />
+      </div>
+      <div class="form-group">
+        <label>Device ID</label>
+        <input type="text" id="deviceId" value="camera_001" placeholder="e.g., camera_001" />
+      </div>
+      <div class="form-group">
+        <label>Capture Interval (seconds)</label>
+        <input type="number" id="captureInterval" value="10" min="1" max="300" />
+      </div>
+    </div>
+    <div class="config-group">
+      <div class="form-group">
+        <label>Image Quality (JPEG)</label>
+        <input type="range" id="quality" value="0.8" min="0.3" max="1" step="0.1" />
+        <span id="qualityValue">0.8</span>
+      </div>
+      <div class="form-group">
+        <label>Camera Source</label>
+        <select id="cameraSource">
+          <option value="environment">Rear Camera</option>
+          <option value="user">Front Camera</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <div class="status-item">
+      <span class="status-label">Connection Status:</span>
+      <span class="status-value" id="connectionStatus">Not connected</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Camera Status:</span>
+      <span class="status-value" id="cameraStatus">Not initialized</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Frames Captured:</span>
+      <span class="status-value" id="frameCount">0</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Frames Uploaded:</span>
+      <span class="status-value" id="uploadCount">0</span>
+    </div>
+  </div>
+
+  <!-- Control Buttons -->
+  <div class="controls">
+    <button class="btn btn-primary" id="initBtn" onclick="initializeCamera()">Initialize Camera</button>
+    <button class="btn btn-success" id="captureBtn" onclick="captureFrame()" disabled>Capture Frame</button>
+    <button class="btn btn-success" id="autoBtn" onclick="toggleAutoCapture()" disabled>Start Auto Capture</button>
+    <button class="btn btn-danger" id="stopBtn" onclick="stopCamera()" disabled>Stop</button>
+  </div>
+
+  <!-- Video Preview -->
+  <div class="preview-section">
+    <h3>Live Preview</h3>
+    <div id="videoContainer">
+      <video id="video" playsinline autoplay></video>
+    </div>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <!-- Image Gallery -->
+  <div class="preview-section">
+    <h3>Captured Images</h3>
+    <div id="gallery" class="gallery"></div>
+  </div>
+
+  <!-- Activity Log -->
+  <div class="log-section">
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+let videoStream = null;
+let captureTimer = null;
+let frameCount = 0;
+let uploadCount = 0;
+let isAutoCapturing = false;
+const capturedFrames = [];
+
+// Logger function
+function log(message, type = 'info') {
+  const logEl = document.getElementById('log');
+  const item = document.createElement('div');
+  item.className = `log-item ${type}`;
+  item.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+  logEl.insertBefore(item, logEl.firstChild);
+  if (logEl.children.length > 50) logEl.removeChild(logEl.lastChild);
+}
+
+// Show message
+function showMessage(message, type = 'info') {
+  const container = document.getElementById('messageContainer');
+  const alert = document.createElement('div');
+  alert.className = `alert alert-${type}`;
+  alert.textContent = message;
+  container.appendChild(alert);
+  setTimeout(() => alert.remove(), 5000);
+}
+
+// Update quality display
+document.getElementById('quality').addEventListener('input', (e) => {
+  document.getElementById('qualityValue').textContent = e.target.value;
+});
+
+// Initialize camera
+async function initializeCamera() {
+  try {
+    const constraints = {
+      video: {
+        facingMode: document.getElementById('cameraSource').value,
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false
+    };
+
+    videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+    document.getElementById('video').srcObject = videoStream;
+    
+    document.getElementById('cameraStatus').textContent = 'Ready';
+    document.getElementById('cameraStatus').className = 'status-value success';
+    document.getElementById('initBtn').disabled = true;
+    document.getElementById('captureBtn').disabled = false;
+    document.getElementById('autoBtn').disabled = false;
+    document.getElementById('stopBtn').disabled = false;
+    
+    log('Camera initialized successfully', 'success');
+    showMessage('Camera initialized. Click "Capture Frame" to capture or "Start Auto Capture" for continuous capture.', 'success');
+  } catch (err) {
+    log(`Camera initialization failed: ${err.message}`, 'error');
+    showMessage(`Failed to initialize camera: ${err.message}`, 'error');
+    document.getElementById('cameraStatus').textContent = 'Error';
+    document.getElementById('cameraStatus').className = 'status-value error';
+  }
+}
+
+// Capture single frame
+function captureFrame() {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  ctx.drawImage(video, 0, 0);
+  const imageData = canvas.toDataURL('image/jpeg', parseFloat(document.getElementById('quality').value));
+  
+  frameCount++;
+  document.getElementById('frameCount').textContent = frameCount;
+
+  // Store in memory
+  capturedFrames.unshift({
+    data: imageData,
+    timestamp: new Date()
+  });
+  if (capturedFrames.length > 20) capturedFrames.pop();
+
+  // Update gallery
+  updateGallery();
+
+  // Upload
+  uploadFrame(imageData);
+
+  log(`Frame captured (${canvas.width}x${canvas.height})`, 'info');
+}
+
+// Upload frame to server
+async function uploadFrame(imageData) {
+  const serverUrl = document.getElementById('serverUrl').value;
+  const token = document.getElementById('token').value;
+  const deviceId = document.getElementById('deviceId').value;
+
+  if (!token) {
+    showMessage('Please provide a JWT token', 'error');
+    log('Upload failed: No token provided', 'error');
+    return;
+  }
+
+  if (!deviceId) {
+    showMessage('Please provide a device ID', 'error');
+    log('Upload failed: No device ID', 'error');
+    return;
+  }
+
+  try {
+    document.getElementById('connectionStatus').textContent = 'Uploading...';
+    document.getElementById('connectionStatus').className = 'status-value pending';
+
+    const response = await fetch(`${serverUrl}/api/sensor-data/submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        device_id: deviceId,
+        image_data: imageData.split(',')[1], // Strip data URL prefix
+        metadata: {
+          timestamp: new Date().toISOString(),
+          sensor_type: 'camera_browser',
+          resolution: `${document.getElementById('video').videoWidth}x${document.getElementById('video').videoHeight}`,
+          quality: document.getElementById('quality').value
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Upload failed');
+    }
+
+    const result = await response.json();
+    uploadCount++;
+    document.getElementById('uploadCount').textContent = uploadCount;
+    document.getElementById('connectionStatus').textContent = 'Connected';
+    document.getElementById('connectionStatus').className = 'status-value success';
+    
+    log(`Frame uploaded successfully (ID: ${result.data_id})`, 'success');
+    showMessage('Frame uploaded successfully', 'success');
+  } catch (err) {
+    document.getElementById('connectionStatus').textContent = 'Error';
+    document.getElementById('connectionStatus').className = 'status-value error';
+    log(`Upload failed: ${err.message}`, 'error');
+    showMessage(`Upload failed: ${err.message}`, 'error');
+  }
+}
+
+// Toggle auto capture
+function toggleAutoCapture() {
+  const btn = document.getElementById('autoBtn');
+  if (isAutoCapturing) {
+    clearInterval(captureTimer);
+    isAutoCapturing = false;
+    btn.textContent = 'Start Auto Capture';
+    btn.className = 'btn btn-success';
+    log('Auto-capture stopped', 'info');
+  } else {
+    isAutoCapturing = true;
+    btn.textContent = 'Stop Auto Capture';
+    btn.className = 'btn btn-danger';
+    const interval = parseInt(document.getElementById('captureInterval').value) * 1000;
+    captureTimer = setInterval(captureFrame, interval);
+    log(`Auto-capture started (interval: ${document.getElementById('captureInterval').value}s)`, 'info');
+  }
+}
+
+// Stop camera
+function stopCamera() {
+  if (videoStream) {
+    videoStream.getTracks().forEach(track => track.stop());
+    videoStream = null;
+  }
+  if (captureTimer) {
+    clearInterval(captureTimer);
+    isAutoCapturing = false;
+  }
+  
+  document.getElementById('cameraStatus').textContent = 'Stopped';
+  document.getElementById('cameraStatus').className = 'status-value';
+  document.getElementById('initBtn').disabled = false;
+  document.getElementById('captureBtn').disabled = true;
+  document.getElementById('autoBtn').disabled = true;
+  document.getElementById('autoBtn').textContent = 'Start Auto Capture';
+  document.getElementById('autoBtn').className = 'btn btn-success';
+  document.getElementById('stopBtn').disabled = true;
+  
+  log('Camera stopped', 'info');
+  showMessage('Camera stopped', 'info');
+}
+
+// Update gallery display
+function updateGallery() {
+  const gallery = document.getElementById('gallery');
+  gallery.innerHTML = '';
+  capturedFrames.forEach(frame => {
+    const item = document.createElement('div');
+    item.className = 'gallery-item';
+    item.innerHTML = `
+      <img src="${frame.data}" />
+      <div class="gallery-item-timestamp">${frame.timestamp.toLocaleTimeString()}</div>
+    `;
+    gallery.appendChild(item);
+  });
+}
+
+log('Camera capture tool initialized. Click "Initialize Camera" to start.', 'info');
+</script>
+
+</body>
+</html>

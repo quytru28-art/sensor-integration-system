@@ -224,6 +224,17 @@ db.serialize(() => {
     )
   `);
 
+  // Add image columns for camera support
+  db.run(`ALTER TABLE sensor_data ADD COLUMN image_url TEXT`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+  db.run(`ALTER TABLE sensor_data ADD COLUMN image_data TEXT`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+  db.run(`ALTER TABLE sensor_data ADD COLUMN metadata TEXT`, (err) => {
+    if (err && !err.message.includes("duplicate column")) console.error(err.message);
+  });
+
   /* ================= MFA TOKENS ================= */
 
   db.run(`
